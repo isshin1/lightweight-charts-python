@@ -8,6 +8,7 @@ import { IChartApi, ISeriesApi, SeriesType } from "lightweight-charts";
 import { HorizontalLine } from "../horizontal-line/horizontal-line";
 import { RayLine } from "../horizontal-line/ray-line";
 import { VerticalLine } from "../vertical-line/vertical-line";
+import { TextAnnotation } from "../text-annotation/text-annotation";
 
 
 interface Icon {
@@ -24,6 +25,8 @@ export class ToolBox {
     private static readonly RAY_SVG: string = '<rect x="8" y="14" width="17" height="1"/><path d="M3.67,14.5l2.83,2.83l2.83-2.83L6.5,11.67L3.67,14.5z M7.91,14.5L6.5,15.91L5.09,14.5l1.41-1.41L7.91,14.5z"/>';
     private static readonly BOX_SVG: string = '<rect x="8" y="6" width="12" height="1"/><rect x="9" y="22" width="11" height="1"/><path d="M3.67,6.5L6.5,9.33L9.33,6.5L6.5,3.67L3.67,6.5z M7.91,6.5L6.5,7.91L5.09,6.5L6.5,5.09L7.91,6.5z"/><path d="M19.67,6.5l2.83,2.83l2.83-2.83L22.5,3.67L19.67,6.5z M23.91,6.5L22.5,7.91L21.09,6.5l1.41-1.41L23.91,6.5z"/><path d="M19.67,22.5l2.83,2.83l2.83-2.83l-2.83-2.83L19.67,22.5z M23.91,22.5l-1.41,1.41l-1.41-1.41l1.41-1.41L23.91,22.5z"/><path d="M3.67,22.5l2.83,2.83l2.83-2.83L6.5,19.67L3.67,22.5z M7.91,22.5L6.5,23.91L5.09,22.5l1.41-1.41L7.91,22.5z"/><rect x="22" y="9" width="1" height="11"/><rect x="6" y="9" width="1" height="11"/>';
     private static readonly VERT_SVG: string = ToolBox.RAY_SVG;
+    // Text icon using paths instead of text element for proper fill color
+    private static readonly TEXT_SVG: string = '<path d="M7,6 L7,8 L12,8 L12,22 L10,22 L10,24 L19,24 L19,22 L17,22 L17,8 L22,8 L22,6 Z"/>';
 
     div: HTMLDivElement;
     private activeIcon: Icon | null = null;
@@ -54,7 +57,7 @@ export class ToolBox {
 
     toJSON() {
         // Exclude the chart attribute from serialization
-        const { ...serialized} = this;
+        const { ...serialized } = this;
         return serialized;
     }
 
@@ -66,13 +69,14 @@ export class ToolBox {
         this.buttons.push(this._makeToolBoxElement(RayLine, 'KeyR', ToolBox.RAY_SVG));
         this.buttons.push(this._makeToolBoxElement(Box, 'KeyB', ToolBox.BOX_SVG));
         this.buttons.push(this._makeToolBoxElement(VerticalLine, 'KeyV', ToolBox.VERT_SVG, true));
+        this.buttons.push(this._makeToolBoxElement(TextAnnotation, 'KeyA', ToolBox.TEXT_SVG));
         for (const button of this.buttons) {
             div.appendChild(button);
         }
         return div
     }
 
-    private _makeToolBoxElement(DrawingType: new (...args: any[]) => Drawing, keyCmd: string, paths: string, rotate=false) {
+    private _makeToolBoxElement(DrawingType: new (...args: any[]) => Drawing, keyCmd: string, paths: string, rotate = false) {
         const elem = document.createElement('div')
         elem.classList.add("toolbox-button");
 
@@ -87,7 +91,7 @@ export class ToolBox {
         svg.appendChild(group)
         elem.appendChild(svg);
 
-        const icon: Icon = {div: elem, group: group, type: DrawingType}
+        const icon: Icon = { div: elem, group: group, type: DrawingType }
 
         elem.addEventListener('click', () => this._onIconClick(icon));
 
@@ -119,7 +123,7 @@ export class ToolBox {
             this._drawingTool?.stopDrawing()
             if (this.activeIcon === icon) {
                 this.activeIcon = null
-                return 
+                return
             }
         }
         this.activeIcon = icon
@@ -143,14 +147,31 @@ export class ToolBox {
         this._drawingTool.clearDrawings();
     }
 
+    updateTextAnnotation(id: string, newText: string): boolean {
+        // Find the text annotation with the given ID and update its text
+        for (const drawing of this._drawingTool.drawings) {
+            if (drawing._type === 'TextAnnotation' && (drawing as any)._id === id) {
+                (drawing as any).setText(newText);
+                this.saveDrawings(); // Auto-save after update
+                return true;
+            }
+        }
+        return false; // Annotation not found
+    }
+
     saveDrawings = () => {
         const drawingMeta = []
         for (const d of this._drawingTool.drawings) {
-            drawingMeta.push({
+            const meta: any = {
                 type: d._type,
                 points: d.points,
                 options: d._options
-            });
+            };
+            // For TextAnnotation, ensure text is stored in options
+            if (d._type === 'TextAnnotation' && (d as any)._text) {
+                meta.options = { ...meta.options, text: (d as any)._text };
+            }
+            drawingMeta.push(meta);
         }
         const string = JSON.stringify(drawingMeta);
         window.callbackFunction(`save_drawings${this._handlerID}_~_${string}`)
@@ -173,6 +194,11 @@ export class ToolBox {
                     break;
                 case "VerticalLine":
                     this._drawingTool.addNewDrawing(new VerticalLine(d.points[0], d.options));
+                    break;
+                case "TextAnnotation":
+                    // Extract text from options, default to "Text" if not found
+                    const text = (d.options && typeof d.options.text === 'string') ? d.options.text : "Text";
+                    this._drawingTool.addNewDrawing(new TextAnnotation(d.points[0], text, d.options));
                     break;
             }
         })

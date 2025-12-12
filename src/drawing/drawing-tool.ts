@@ -94,9 +94,17 @@ export class DrawingTool {
         if (this._activeDrawing == null) {
             if (this._drawingType == null) return;
 
-            this._activeDrawing = new this._drawingType(point, point);
+            // Special handling for TextAnnotation - pass default text
+            if (this._drawingType.name === 'TextAnnotation') {
+                this._activeDrawing = new this._drawingType(point, "Text");
+            } else {
+                this._activeDrawing = new this._drawingType(point, point);
+            }
             this._series.attachPrimitive(this._activeDrawing);
-            if (this._drawingType == HorizontalLine) this._onClick(param);
+            // Complete single-point drawings immediately
+            if (this._drawingType == HorizontalLine || this._drawingType.name === 'TextAnnotation') {
+                this._onClick(param);
+            }
         }
         else {
             this._drawings.push(this._activeDrawing);
