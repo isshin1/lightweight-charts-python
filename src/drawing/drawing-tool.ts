@@ -7,6 +7,7 @@ import {
 } from 'lightweight-charts';
 import { Drawing } from './drawing';
 import { HorizontalLine } from '../horizontal-line/horizontal-line';
+import { TextAnnotation } from '../text-annotation/text-annotation';
 
 
 export class DrawingTool {
@@ -45,7 +46,25 @@ export class DrawingTool {
         return this._drawings;
     }
 
+    get chart() {
+        return this._chart;
+    }
+
     addNewDrawing(drawing: Drawing) {
+        // Sync logical indices from time to ensure consistency across timeframes
+        const timeScale = this._chart.timeScale();
+        for (const point of drawing.points) {
+            if (point && point.time) {
+                const coord = timeScale.timeToCoordinate(point.time as any);
+                if (coord !== null) {
+                    const logical = timeScale.coordinateToLogical(coord);
+                    if (logical !== null) {
+                        point.logical = logical;
+                    }
+                }
+            }
+        }
+
         this._series.attachPrimitive(drawing);
         this._drawings.push(drawing);
     }
@@ -88,26 +107,32 @@ export class DrawingTool {
     private _onClick(param: MouseEventParams) {
         if (!this._isDrawing) return;
 
-        const point = Drawing._eventToPoint(param, this._series);
+        const point = Drawing._eventToPoint(param, this._series, this._chart);
         if (!point) return;
 
         if (this._activeDrawing == null) {
             if (this._drawingType == null) return;
 
             // Special handling for TextAnnotation - pass default text
-            if (this._drawingType.name === 'TextAnnotation') {
+            if (this._drawingType === TextAnnotation) {
                 this._activeDrawing = new this._drawingType(point, "Text");
             } else {
                 this._activeDrawing = new this._drawingType(point, point);
             }
             this._series.attachPrimitive(this._activeDrawing);
             // Complete single-point drawings immediately
-            if (this._drawingType == HorizontalLine || this._drawingType.name === 'TextAnnotation') {
+            if (this._drawingType == HorizontalLine || this._drawingType === TextAnnotation) {
                 this._onClick(param);
             }
         }
         else {
             this._drawings.push(this._activeDrawing);
+
+            // If it's a TextAnnotation, trigger edit mode immediately
+            if (this._activeDrawing instanceof TextAnnotation) {
+                this._activeDrawing.startEditing();
+            }
+
             this.stopDrawing();
 
             if (!this._finishDrawingCallback) return;
@@ -122,7 +147,7 @@ export class DrawingTool {
 
         if (!this._isDrawing || !this._activeDrawing) return;
 
-        const point = Drawing._eventToPoint(param, this._series);
+        const point = Drawing._eventToPoint(param, this._series, this._chart);
         if (!point) return;
         this._activeDrawing.updatePoints(null, point);
         // this._activeDrawing.setSecondPoint(point);

@@ -1,4 +1,5 @@
 import {
+    IChartApi,
     ISeriesApi,
     Logical,
     MouseEventParams,
@@ -25,7 +26,7 @@ export abstract class Drawing extends PluginBase {
     _options: DrawingOptions;
 
     abstract _type: string;
-    protected _points: (Point|null)[] = [];
+    protected _points: (Point | null)[] = [];
 
     protected _state: InteractionState = InteractionState.NONE;
 
@@ -66,7 +67,7 @@ export abstract class Drawing extends PluginBase {
     }
 
     public updatePoints(...points: (Point | null)[]) {
-        for (let i=0; i<this.points.length; i++) {
+        for (let i = 0; i < this.points.length; i++) {
             if (points[i] == null) continue;
             this.points[i] = points[i] as Point;
         }
@@ -89,7 +90,7 @@ export abstract class Drawing extends PluginBase {
 
     protected _subscribe(name: keyof DocumentEventMap, listener: any) {
         document.body.addEventListener(name, listener);
-        this._listeners.push({name: name, listener: listener});
+        this._listeners.push({ name: name, listener: listener });
     }
 
     protected _unsubscribe(name: keyof DocumentEventMap, callback: any) {
@@ -116,12 +117,58 @@ export abstract class Drawing extends PluginBase {
         }
     }
 
-    public static _eventToPoint(param: MouseEventParams, series: ISeriesApi<SeriesType>) {
-        if (!series || !param.point || !param.logical) return null;
+    public static _eventToPoint(param: MouseEventParams, series: ISeriesApi<SeriesType>, chart: IChartApi) {
+        if (!series || !param.point || param.logical === null || param.logical === undefined) return null;
         const barPrice = series.coordinateToPrice(param.point.y);
         if (barPrice == null) return null;
+
+        let time: any = param.time;
+        if (!time && chart) {
+            time = chart.timeScale().coordinateToTime(param.point.x);
+        }
+        if (!time && series && param.logical !== null) {
+            const data = series.dataByIndex(param.logical);
+            if (data) {
+                time = data.time;
+            } else {
+                // Extrapolate time for whitespace (future steps)
+                let lastKnownIndex: number | null = null;
+                let lastKnownTime: any = null;
+                // Search backwards for the last loaded bar
+                // Search backwards for the last loaded bar
+                for (let i = 1; i < 2000; i++) {
+                    const idx = param.logical - i;
+                    const d = series.dataByIndex(idx);
+                    if (d) {
+                        lastKnownIndex = idx;
+                        lastKnownTime = d.time;
+                        break;
+                    }
+                }
+
+                if (lastKnownIndex !== null) {
+                    if (typeof lastKnownTime === 'number') {
+                        // Estimate interval
+                        const prev = series.dataByIndex(lastKnownIndex - 1);
+                        let interval = 60; // default assumption
+                        if (prev && typeof prev.time === 'number') {
+                            interval = lastKnownTime - prev.time;
+                        }
+
+                        const diff = param.logical - lastKnownIndex;
+                        const discreteDiff = Math.round(diff);
+                        time = (lastKnownTime + (discreteDiff * interval)) as any;
+                    } else {
+                        // Non-numeric time (e.g. String Date), cannot extrapolate easily.
+                        // Clamp to last known time to prevent crash
+                        time = lastKnownTime;
+                    }
+                }
+            }
+        }
+
         return {
-            time: param.time || null,
+            time: time || null,
             logical: param.logical,
             price: barPrice.valueOf(),
         }
@@ -129,8 +176,8 @@ export abstract class Drawing extends PluginBase {
 
     protected static _getDiff(p1: Point, p2: Point): DiffPoint {
         const diff: DiffPoint = {
-            logical: p1.logical-p2.logical,
-            price: p1.price-p2.price,
+            logical: p1.logical - p2.logical,
+            price: p1.price - p2.price,
         }
         return diff;
     }
@@ -138,7 +185,7 @@ export abstract class Drawing extends PluginBase {
     protected _addDiffToPoint(point: Point | null, logicalDiff: number, priceDiff: number) {
         if (!point) return;
         point.logical = point.logical + logicalDiff as Logical;
-        point.price = point.price+priceDiff;
+        point.price = point.price + priceDiff;
         point.time = this.series.dataByIndex(point.logical)?.time || null;
     }
 
@@ -162,7 +209,7 @@ export abstract class Drawing extends PluginBase {
             this._state != InteractionState.DRAGGINGP4) {
             return;
         }
-        const mousePoint = Drawing._eventToPoint(param, this.series);
+        const mousePoint = Drawing._eventToPoint(param, this.series, this.chart);
         if (!mousePoint) return;
         this._startDragPoint = this._startDragPoint || mousePoint;
 

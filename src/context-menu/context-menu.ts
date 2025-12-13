@@ -12,7 +12,7 @@ export function camelToTitle(inputString: string) {
         if (result.length == 0) {
             result.push(c.toUpperCase());
         } else if (c == c.toUpperCase()) {
-            result.push(' '+c);
+            result.push(' ' + c);
         } else result.push(c);
     }
     return result.join('');
@@ -77,7 +77,10 @@ export class ContextMenu {
             })
         }
 
-        let onClickDelete = () => this.drawingTool.delete(Drawing.lastHoveredObject);
+        let onClickDelete = () => {
+            this.drawingTool.delete(Drawing.lastHoveredObject);
+            this.saveDrawings();
+        }
         this.separator()
         this.menuItem('Delete Drawing', onClickDelete)
 
@@ -127,9 +130,9 @@ export class ContextMenu {
 
         item.addEventListener('mouseover', () => {
             if (this.hoverItem && this.hoverItem.closeAction) this.hoverItem.closeAction()
-            this.hoverItem = {elem: elem, action: action, closeAction: hover}
+            this.hoverItem = { elem: elem, action: action, closeAction: hover }
         })
-        if (!hover) item.addEventListener('click', (event) => {action(event); this.div.style.display = 'none'})
+        if (!hover) item.addEventListener('click', (event) => { action(event); this.div.style.display = 'none' })
         else {
             let timeout: number;
             item.addEventListener('mouseover', () => timeout = setTimeout(() => action(item.getBoundingClientRect()), 100))

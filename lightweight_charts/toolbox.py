@@ -24,6 +24,12 @@ class ToolBox:
             return
         self.run_script(f'if ({self.id}.toolBox) {self.id}.toolBox.loadDrawings({json.dumps(self.drawings[tag])})')
 
+    def clear_drawings(self):
+        """
+        Clears all drawings from the chart.
+        """
+        self.run_script(f'if ({self.id}.toolBox) {self.id}.toolBox.clearDrawings()')
+
     def import_drawings(self, file_path):
         """
         Imports a list of drawings stored at the given file path.
@@ -43,3 +49,5 @@ class ToolBox:
         if not self._save_under:
             return
         self.drawings[self._save_under.value] = json.loads(drawings)
+        if hasattr(self, 'on_drawing_changed') and callable(self.on_drawing_changed):
+            self.on_drawing_changed()

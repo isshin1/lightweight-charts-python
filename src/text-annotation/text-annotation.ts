@@ -131,6 +131,10 @@ export class TextAnnotation extends Drawing {
 
   private _lastClickTime: number = 0;
 
+  public startEditing() {
+    this._editText();
+  }
+
   private _editText() {
     // Call back to Python with the point data, current text, and annotation ID
     const pointData = {
@@ -148,7 +152,7 @@ export class TextAnnotation extends Drawing {
   protected _mouseIsOverDrawing(param: MouseEventParams, tolerance = 20) {
     if (!param.point) return false;
 
-    const viewPoint = this._paneViews[0]._point;
+    const viewPoint = (this._paneViews[0] as TextAnnotationPaneView)._point;
     if (viewPoint.x === null || viewPoint.y === null) return false;
 
     const mouseX = param.point.x;

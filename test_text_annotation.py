@@ -37,7 +37,6 @@ def on_edit_text_annotation(data_str):
         data = json.loads(data_str)
         
         # Extract values - handle both string and object types for currentText
-        annotation_id = data.get('id', '')
         current_text = data.get('currentText', 'Text')
         if isinstance(current_text, dict):
             # If currentText is a dict (shouldn't happen), use 'Text' as default
@@ -50,7 +49,6 @@ def on_edit_text_annotation(data_str):
         price = data.get('price', 0)
         
         print(f"\n📝 Text Annotation Edit Request:")
-        print(f"   ID: {annotation_id}")
         print(f"   Time: {time}")
         print(f"   Logical: {logical}")
         print(f"   Price: {price:.2f}")
@@ -70,18 +68,12 @@ def on_edit_text_annotation(data_str):
             text=str(current_text)  # ensure it's a string
         )
         
-        if ok and new_text and new_text != current_text:
+        if ok and new_text:
             print(f"   ✅ New Text: '{new_text}'")
-            
-            # Update the text annotation in the chart
-            # Call the JavaScript updateTextAnnotation method
-            escaped_text = new_text.replace('\\', '\\\\').replace('"', '\\"').replace('\n', '\\n')
-            update_script = f'{chart.id}.toolBox.updateTextAnnotation("{annotation_id}", "{escaped_text}")'
-            chart.run_script(update_script)
-            
-            print(f"   ✅ Text updated successfully in chart!")
-        elif ok and new_text == current_text:
-            print(f"   ℹ️  Text unchanged")
+            # TODO: Update the text annotation in the chart
+            # This would require adding a method in the library to update text annotations
+            # For now, the text will remain unchanged in the chart
+            print("   ⚠️  Note: Text update in chart not yet implemented")
         else:
             print(f"   ❌ Edit cancelled")
             
@@ -118,25 +110,4 @@ print("\n💡 Tip: You can drag text annotations to reposition them")
 print("="*60 + "\n")
 
 # Show the chart
-
-chart.layout(
-    background_color='#ffffff',
-    text_color='#000000',
-    font_size=16,
-    font_family='Helvetica'
-)
-
-chart.candle_style(
-    up_color='#089981',
-    down_color='#F23645',
-    border_up_color='#089981',
-    border_down_color='#F23645',
-    wick_up_color='#089981',
-    wick_down_color='#F23645'
-)
-
-chart.volume_config(up_color='#089981', down_color='#F23645')
-
-chart.grid(color='rgba(29, 30, 38, .1)')
-
 chart.show(block=True)

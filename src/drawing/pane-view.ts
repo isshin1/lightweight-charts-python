@@ -48,6 +48,7 @@ export abstract class TwoPointDrawingPaneView extends DrawingPaneView {
 
     _getX(p: Point) {
         const timeScale = this._source.chart.timeScale();
+        if (p.time) return timeScale.timeToCoordinate(p.time);
         return timeScale.logicalToCoordinate(p.logical);
     }
 }

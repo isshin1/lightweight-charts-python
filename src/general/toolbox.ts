@@ -48,8 +48,26 @@ export class ToolBox {
         commandFunctions.push((event: KeyboardEvent) => {
             if ((event.metaKey || event.ctrlKey) && event.code === 'KeyZ') {
                 const drawingToDelete = this._drawingTool.drawings.pop();
-                if (drawingToDelete) this._drawingTool.delete(drawingToDelete)
+                if (drawingToDelete) {
+                    this._drawingTool.delete(drawingToDelete);
+                    this.saveDrawings();
+                }
                 return true;
+            }
+            return false;
+        });
+
+        document.body.addEventListener('mouseup', () => {
+            if (Drawing.hoveredObject) this.saveDrawings();
+        });
+
+        commandFunctions.push((event: KeyboardEvent) => {
+            if (event.code === 'Delete' || event.code === 'Backspace') {
+                if (Drawing.hoveredObject) {
+                    this._drawingTool.delete(Drawing.hoveredObject);
+                    this.saveDrawings();
+                    return true;
+                }
             }
             return false;
         });
