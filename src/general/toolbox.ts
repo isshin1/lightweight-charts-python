@@ -27,6 +27,7 @@ export class ToolBox {
     private static readonly VERT_SVG: string = ToolBox.RAY_SVG;
     // Text icon using paths instead of text element for proper fill color
     private static readonly TEXT_SVG: string = '<path d="M7,6 L7,8 L12,8 L12,22 L10,22 L10,24 L19,24 L19,22 L17,22 L17,8 L22,8 L22,6 Z"/>';
+    private static readonly TRASH_SVG: string = '<path d="M6,19c0,1.1,0.9,2,2,2h8c1.1,0,2-0.9,2-2V7H6V19z M19,4h-3.5l-1-1h-5l-1,1H5v2h14V4z"/>';
 
     div: HTMLDivElement;
     private activeIcon: Icon | null = null;
@@ -61,11 +62,22 @@ export class ToolBox {
             if (Drawing.hoveredObject) this.saveDrawings();
         });
 
+        document.body.addEventListener('drawing-changed', () => {
+            this.saveDrawings();
+        });
+
         commandFunctions.push((event: KeyboardEvent) => {
             if (event.code === 'Delete' || event.code === 'Backspace') {
                 if (Drawing.hoveredObject) {
                     this._drawingTool.delete(Drawing.hoveredObject);
                     this.saveDrawings();
+                    return true;
+                }
+            }
+            if (event.code === 'Escape') {
+                if (this._drawingTool.activeDrawing) return false;
+                if (this.activeIcon) {
+                    this._onIconClick(this.activeIcon);
                     return true;
                 }
             }
@@ -88,10 +100,94 @@ export class ToolBox {
         this.buttons.push(this._makeToolBoxElement(Box, 'KeyB', ToolBox.BOX_SVG));
         this.buttons.push(this._makeToolBoxElement(VerticalLine, 'KeyV', ToolBox.VERT_SVG, true));
         this.buttons.push(this._makeToolBoxElement(TextAnnotation, 'KeyA', ToolBox.TEXT_SVG));
+        this.buttons.push(this._makeActionButton(ToolBox.TRASH_SVG, () => {
+            this._showConfirmationModal('Delete all drawings?', () => {
+                this.clearDrawings();
+                this.saveDrawings();
+            });
+        }));
         for (const button of this.buttons) {
             div.appendChild(button);
         }
         return div
+    }
+
+    private _showConfirmationModal(message: string, onConfirm: () => void) {
+        const modal = document.createElement('div');
+        modal.classList.add('confirmation-modal');
+
+        const content = document.createElement('div');
+        content.classList.add('modal-content');
+
+        const text = document.createElement('div');
+        text.classList.add('modal-text');
+        text.innerText = message;
+
+        const buttons = document.createElement('div');
+        buttons.classList.add('modal-buttons');
+
+        const confirmBtn = document.createElement('button');
+        confirmBtn.innerText = 'Yes';
+        confirmBtn.classList.add('modal-button', 'confirm');
+
+        const cancelBtn = document.createElement('button');
+        cancelBtn.innerText = 'No';
+        cancelBtn.classList.add('modal-button', 'cancel');
+
+        const close = () => {
+            document.body.removeChild(modal);
+            document.removeEventListener('keydown', onKeyDown);
+        };
+
+        const onKeyDown = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') close();
+            if (e.key === 'Enter') {
+                onConfirm();
+                close();
+            }
+        };
+
+        confirmBtn.addEventListener('click', () => {
+            onConfirm();
+            close();
+        });
+
+        cancelBtn.addEventListener('click', close);
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) close();
+        });
+
+        document.addEventListener('keydown', onKeyDown);
+
+        buttons.appendChild(cancelBtn);
+        buttons.appendChild(confirmBtn);
+        content.appendChild(text);
+        content.appendChild(buttons);
+        modal.appendChild(content);
+        document.body.appendChild(modal);
+    }
+
+    private _makeActionButton(paths: string, action: () => void) {
+        const elem = document.createElement('div')
+        elem.classList.add("toolbox-button");
+
+        const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+        svg.setAttribute("width", "29");
+        svg.setAttribute("height", "29");
+
+        const group = document.createElementNS("http://www.w3.org/2000/svg", "g");
+        group.innerHTML = paths
+        group.setAttribute("fill", window.pane.color)
+
+        svg.appendChild(group)
+        elem.appendChild(svg);
+
+        elem.addEventListener('click', action);
+
+        // Add transform if needed, copying from makeToolBoxElement logic if generic
+        // but for now simple icon is enough
+
+        return elem;
     }
 
     private _makeToolBoxElement(DrawingType: new (...args: any[]) => Drawing, keyCmd: string, paths: string, rotate = false) {
@@ -139,6 +235,10 @@ export class ToolBox {
             this.activeIcon.div.classList.remove('active-toolbox-button');
             window.setCursor('crosshair');
             this._drawingTool?.stopDrawing()
+
+            // Re-enable chart interaction when deselecting tool
+            this._drawingTool.chart.applyOptions({ handleScroll: true, handleScale: true });
+
             if (this.activeIcon === icon) {
                 this.activeIcon = null
                 return
@@ -147,6 +247,10 @@ export class ToolBox {
         this.activeIcon = icon
         this.activeIcon.div.classList.add('active-toolbox-button')
         window.setCursor('crosshair');
+
+        // Disable chart interaction when selecting tool
+        this._drawingTool.chart.applyOptions({ handleScroll: false, handleScale: false });
+
         this._drawingTool?.beginDrawing(this.activeIcon.type);
     }
 
@@ -154,6 +258,10 @@ export class ToolBox {
         window.setCursor('default');
         if (this.activeIcon) this.activeIcon.div.classList.remove('active-toolbox-button')
         this.activeIcon = null
+
+        // Re-enable chart interaction when drawing finishes
+        this._drawingTool.chart.applyOptions({ handleScroll: true, handleScale: true });
+
         this.saveDrawings()
     }
 

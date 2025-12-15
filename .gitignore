@@ -15,3 +15,5 @@ pyrightconfig.json
 
 working/
 .zed/
+
+test_venv/

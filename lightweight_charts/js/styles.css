@@ -1,5 +1,5 @@
 :root {
-	--bg-color:#0c0d0f;
+	--bg-color: #0c0d0f;
 	--hover-bg-color: #3c434c;
 	--click-bg-color: #50565E;
 	--active-bg-color: rgba(0, 122, 255, 0.7);
@@ -10,17 +10,19 @@
 }
 
 body {
-	background-color: rgb(0,0,0);
+	background-color: rgb(0, 0, 0);
 	color: rgba(19, 23, 34, 1);
 	overflow: hidden;
 	font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu,
-            Cantarell, "Helvetica Neue", sans-serif;
+		Cantarell, "Helvetica Neue", sans-serif;
 }
 
 .handler {
 	display: flex;
 	flex-direction: column;
 	position: relative;
+	user-select: none;
+	-webkit-user-select: none;
 }
 
 .toolbox {
@@ -43,9 +45,11 @@ body {
 	display: flex;
 	background-color: transparent;
 }
+
 .toolbox-button:hover {
 	background-color: rgba(80, 86, 94, 0.7);
 }
+
 .toolbox-button:active {
 	background-color: rgba(90, 106, 104, 0.7);
 }
@@ -53,6 +57,7 @@ body {
 .active-toolbox-button {
 	background-color: var(--active-bg-color) !important;
 }
+
 .active-toolbox-button g {
 	fill: var(--active-color);
 }
@@ -68,6 +73,7 @@ body {
 	font-size: 13px;
 	cursor: default;
 }
+
 .context-menu-item {
 	display: flex;
 	align-items: center;
@@ -76,6 +82,7 @@ body {
 	margin: 1px 0px;
 	border-radius: 3px;
 }
+
 .context-menu-item:hover {
 	background-color: var(--muted-bg-color);
 }
@@ -117,6 +124,7 @@ body {
 	color: var(--color);
 	background-color: transparent;
 }
+
 .topbar-button:hover {
 	background-color: var(--hover-bg-color)
 }
@@ -182,12 +190,13 @@ body {
 	padding: 5px;
 	z-index: 1000;
 	align-items: center;
-	background-color: rgba(30 ,30, 30, 0.9);
+	background-color: rgba(30, 30, 30, 0.9);
 	border: 2px solid var(--border-color);
 	border-radius: 5px;
 	display: flex;
 
 }
+
 .searchbox input {
 	text-align: center;
 	width: 100px;
@@ -223,22 +232,105 @@ body {
 	display: none;
 	flex-direction: column;
 }
+
 .series-container {
-    display: flex;
-    flex-direction: column;
-    pointer-events: auto;
-    overflow-y: auto;
-    max-height: 80vh;
+	display: flex;
+	flex-direction: column;
+	pointer-events: auto;
+	overflow-y: auto;
+	max-height: 80vh;
 }
+
 .series-container::-webkit-scrollbar {
-    width: 0px;
+	width: 0px;
 }
+
 .legend-toggle-switch {
 	border-radius: 4px;
 	margin-left: 10px;
 	pointer-events: auto;
 }
+
 .legend-toggle-switch:hover {
 	cursor: pointer;
 	background-color: rgba(50, 50, 50, 0.5);
+}
+
+/* Confirmation Modal */
+.confirmation-modal {
+	position: fixed;
+	top: 0;
+	left: 0;
+	width: 100%;
+	height: 100%;
+	background-color: rgba(0, 0, 0, 0.5);
+	display: flex;
+	justify-content: center;
+	align-items: center;
+	z-index: 10000;
+}
+
+.modal-content {
+	background-color: #1e222d;
+	border: 1px solid var(--border-color);
+	border-radius: 6px;
+	padding: 20px;
+	min-width: 250px;
+	box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+	text-align: center;
+}
+
+.modal-text {
+	color: var(--color);
+	font-size: 14px;
+	margin-bottom: 20px;
+}
+
+.modal-buttons {
+	display: flex;
+	justify-content: center;
+	gap: 10px;
+}
+
+.modal-button {
+	padding: 6px 16px;
+	border-radius: 4px;
+	border: none;
+	font-size: 13px;
+	cursor: pointer;
+	transition: background-color 0.2s;
+}
+
+.modal-button.confirm {
+	background-color: var(--active-bg-color);
+	color: #ffffff;
+}
+
+.modal-button.confirm:hover {
+	background-color: rgba(0, 122, 255, 0.9);
+}
+
+.modal-button.cancel {
+	background-color: var(--hover-bg-color);
+	color: var(--color);
+}
+
+.modal-button.cancel:hover {
+	background-color: var(--click-bg-color);
+}
+
+.modal-input {
+	background-color: var(--hover-bg-color);
+	border: 1px solid var(--border-color);
+	color: var(--color);
+	padding: 8px;
+	border-radius: 4px;
+	width: 80%;
+	margin-bottom: 20px;
+	font-size: 14px;
+	outline: none;
+}
+
+.modal-input:focus {
+	border-color: var(--active-bg-color);
 }

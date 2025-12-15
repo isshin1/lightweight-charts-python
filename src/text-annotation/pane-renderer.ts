@@ -10,21 +10,24 @@ export class TextAnnotationPaneRenderer extends DrawingPaneRenderer {
   private _textColor: string;
   private _backgroundColor: string;
   private _padding: number;
+  private _onMeasure: (width: number, height: number) => void;
 
   constructor(
     point: ViewPoint,
     text: string,
     options: DrawingOptions,
-    hovered: boolean
+    hovered: boolean,
+    onMeasure: (width: number, height: number) => void
   ) {
     super(options);
     this._point = point;
     this._text = text;
     this._hovered = hovered;
+    this._onMeasure = onMeasure;
     this._fontSize = 14;  // Increased from 12 for better readability
     this._fontFamily = "Arial";
-    this._textColor = "#000000";  // Black text for visibility on white backgrounds
-    this._backgroundColor = "rgba(255, 255, 255, 0.8)";  // Semi-transparent white background
+    this._textColor = "#FFFFFF";  // White text for visibility on dark backgrounds
+    this._backgroundColor = "rgba(0, 0, 0, 0.0)";  // Fully transparent background
     this._padding = 6;
   }
 
@@ -53,6 +56,8 @@ export class TextAnnotationPaneRenderer extends DrawingPaneRenderer {
       const boxY = y - this._padding;
       const boxWidth = textWidth + 2 * this._padding;
       const boxHeight = textHeight + 2 * this._padding;
+
+      this._onMeasure(boxWidth, boxHeight);
 
       ctx.fillStyle = this._backgroundColor;
       ctx.fillRect(boxX, boxY, boxWidth, boxHeight);

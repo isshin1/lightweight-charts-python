@@ -29,8 +29,15 @@ except ImportError:
         except ImportError:
             QWebEngineView = None
 
-
 if QWebEngineView:
+    try:
+        from PyQt6.QtWebEngineCore import QWebEnginePage
+        class ConsoleLoggingPage(QWebEnginePage):
+             def javaScriptConsoleMessage(self, level, message, lineNumber, sourceID):
+                 print(f"[JS] {message} (Line {lineNumber})")
+    except ImportError:
+         pass
+         
     class Bridge(QObject):
         def __init__(self, chart):
             super().__init__()
@@ -83,6 +90,11 @@ class QtChart(abstract.AbstractChart):
         if QWebEngineView is None:
             raise ModuleNotFoundError('QWebEngineView was not found, and must be installed to use QtChart.')
         self.webview = QWebEngineView(widget)
+        try:
+            self.webview.setPage(ConsoleLoggingPage(self.webview))
+        except NameError:
+            pass # ConsoleLoggingPage not defined (older Qt or import failure)
+            
         super().__init__(abstract.Window(self.webview.page().runJavaScript, 'window.pythonObject.callback'),
                          inner_width, inner_height, scale_candles_only, toolbox)
 

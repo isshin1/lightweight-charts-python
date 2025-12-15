@@ -20,6 +20,9 @@ export class DrawingTool {
     private _isDrawing: boolean = false;
     private _drawingType: (new (...args: any[]) => Drawing) | null = null;
 
+    private _shiftPressed: boolean = false;
+    private _lastCrosshairParam: MouseEventParams | null = null;
+
     constructor(chart: IChartApi, series: ISeriesApi<SeriesType>, finishDrawingCallback: Function | null = null) {
         this._chart = chart;
         this._series = series;
@@ -27,6 +30,33 @@ export class DrawingTool {
 
         this._chart.subscribeClick(this._clickHandler);
         this._chart.subscribeCrosshairMove(this._moveHandler);
+
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Shift') {
+                console.log('Shift keydown');
+                this._shiftPressed = true;
+            }
+        });
+        document.addEventListener('keyup', (e) => {
+            if (e.key === 'Shift') {
+                console.log('Shift keyup');
+                this._shiftPressed = false;
+            }
+        });
+        document.addEventListener('pointerdown', (e) => {
+            console.log('pointerdown', {
+                button: e.button,
+                isDrawing: this._isDrawing,
+                shiftPressed: this._shiftPressed,
+                hasLastParam: !!this._lastCrosshairParam
+            });
+            if (e.button === 0 && this._isDrawing && this._shiftPressed && this._lastCrosshairParam) {
+                console.log('Triggering manual onClick');
+                this._onClick(this._lastCrosshairParam);
+                e.preventDefault();
+                e.stopPropagation();
+            }
+        }, { capture: true });
     }
 
     private _clickHandler = (param: MouseEventParams) => this._onClick(param);
@@ -44,6 +74,10 @@ export class DrawingTool {
 
     get drawings() {
         return this._drawings;
+    }
+
+    get activeDrawing() {
+        return this._activeDrawing;
     }
 
     get chart() {
@@ -126,6 +160,14 @@ export class DrawingTool {
             }
         }
         else {
+            if (this._shiftPressed && (this._activeDrawing._type === 'TrendLine' || this._activeDrawing._type === 'RayLine')) {
+                const firstPoint = this._activeDrawing.points[0];
+                if (firstPoint) {
+                    point.price = firstPoint.price;
+                }
+            }
+            this._activeDrawing.updatePoints(null, point);
+
             this._drawings.push(this._activeDrawing);
 
             // If it's a TextAnnotation, trigger edit mode immediately
@@ -141,14 +183,25 @@ export class DrawingTool {
     }
 
     private _onMouseMove(param: MouseEventParams) {
+        this._lastCrosshairParam = param;
         if (!param) return;
 
-        for (const t of this._drawings) t._handleHoverInteraction(param);
+        if (!this._isDrawing) {
+            for (const t of this._drawings) t._handleHoverInteraction(param, this._shiftPressed);
+        }
 
         if (!this._isDrawing || !this._activeDrawing) return;
 
         const point = Drawing._eventToPoint(param, this._series, this._chart);
         if (!point) return;
+
+        if (this._shiftPressed && (this._activeDrawing._type === 'TrendLine' || this._activeDrawing._type === 'RayLine')) {
+            const firstPoint = this._activeDrawing.points[0];
+            if (firstPoint) {
+                point.price = firstPoint.price;
+            }
+        }
+
         this._activeDrawing.updatePoints(null, point);
         // this._activeDrawing.setSecondPoint(point);
     }

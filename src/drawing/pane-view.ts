@@ -46,9 +46,21 @@ export abstract class TwoPointDrawingPaneView extends DrawingPaneView {
 
     abstract renderer(): DrawingPaneRenderer;
 
-    _getX(p: Point) {
+    _getX(p: Point): Coordinate | null {
         const timeScale = this._source.chart.timeScale();
-        if (p.time) return timeScale.timeToCoordinate(p.time);
+        if (p.time) {
+            // Priority: Attempt to recalculate logical from time (this fixes timeframe changes)
+            const newLogical = Drawing._getExtrapolatedLogical(p.time, this._source.series, this._source.chart);
+            if (newLogical !== null) {
+                // Return coordinate for the recalculated logical position
+                return timeScale.logicalToCoordinate(newLogical);
+            }
+
+            // Fallback: use existing time -> coordinate logic (though _getExtrapolatedLogical covers most)
+            const coord = timeScale.timeToCoordinate(p.time);
+            if (coord !== null) return coord;
+        }
+        // Final fallback: use stored logical index (may be stale across timeframes, but prevents disappearance)
         return timeScale.logicalToCoordinate(p.logical);
     }
 }

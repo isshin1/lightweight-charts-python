@@ -136,20 +136,89 @@ export class TextAnnotation extends Drawing {
   }
 
   private _editText() {
-    // Call back to Python with the point data, current text, and annotation ID
-    const pointData = {
-      id: this._id,
-      time: this._point.time,
-      logical: this._point.logical,
-      price: this._point.price,
-      currentText: this._text
-    };
-
-    const callbackName = `edit_text_annotation_~_${JSON.stringify(pointData)}`;
-    (window as any).callbackFunction(callbackName);
+    this._showInputModal(this._text, (newText) => {
+      if (newText && newText !== this._text) {
+        this.setText(newText);
+        document.body.dispatchEvent(new Event('drawing-changed'));
+      }
+    });
   }
 
-  protected _mouseIsOverDrawing(param: MouseEventParams, tolerance = 20) {
+  private _showInputModal(currentText: string, onConfirm: (text: string) => void) {
+    const modal = document.createElement('div');
+    modal.classList.add('confirmation-modal');
+
+    const content = document.createElement('div');
+    content.classList.add('modal-content');
+
+    const textDisplay = document.createElement('div');
+    textDisplay.classList.add('modal-text');
+    textDisplay.innerText = 'Enter Text:';
+
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.value = currentText;
+    input.classList.add('modal-input');
+
+    const buttons = document.createElement('div');
+    buttons.classList.add('modal-buttons');
+
+    const confirmBtn = document.createElement('button');
+    confirmBtn.innerText = 'OK';
+    confirmBtn.classList.add('modal-button', 'confirm');
+
+    const cancelBtn = document.createElement('button');
+    cancelBtn.innerText = 'Cancel';
+    cancelBtn.classList.add('modal-button', 'cancel');
+
+    const close = () => {
+      document.body.removeChild(modal);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') close();
+      if (e.key === 'Enter') {
+        onConfirm(input.value);
+        close();
+      }
+    };
+
+    confirmBtn.addEventListener('click', () => {
+      onConfirm(input.value);
+      close();
+    });
+
+    cancelBtn.addEventListener('click', close);
+    modal.addEventListener('click', (e) => {
+      if (e.target === modal) close();
+    });
+
+    document.addEventListener('keydown', onKeyDown);
+
+    buttons.appendChild(cancelBtn);
+    buttons.appendChild(confirmBtn);
+    content.appendChild(textDisplay);
+    content.appendChild(input);
+    content.appendChild(buttons);
+    modal.appendChild(content);
+    document.body.appendChild(modal);
+
+    setTimeout(() => {
+      input.focus();
+      input.select();
+    }, 10);
+  }
+
+  private _boxWidth: number = 0;
+  private _boxHeight: number = 0;
+
+  _updateDimensions(width: number, height: number) {
+    this._boxWidth = width;
+    this._boxHeight = height;
+  }
+
+  protected _mouseIsOverDrawing(param: MouseEventParams, tolerance = 0) {
     if (!param.point) return false;
 
     const viewPoint = (this._paneViews[0] as TextAnnotationPaneView)._point;
@@ -158,10 +227,29 @@ export class TextAnnotation extends Drawing {
     const mouseX = param.point.x;
     const mouseY = param.point.y;
 
-    // Simple bounding box check
+    // Renderer draws box normalized to top-left at (x - padding, y - padding)
+    // The padding is defined in renderer (6px). We should probably match it or just use the box dimensions returned.
+    // The rendered box is at (viewPoint.x - padding, viewPoint.y - padding)
+    // With dimensions (boxWidth, boxHeight).
+    // Let's assume the padding logic is internal to the renderer's visual output, but
+    // the boxWidth/Height returned INCLUDES the padding (textWidth + 2*padding).
+    // So logic:
+    // Left: viewPoint.x - 6
+    // Top: viewPoint.y - 6
+    // Right: Left + boxWidth
+    // Bottom: Top + boxHeight
+
+    // We can just rely on the box dimensions.
+    // Ideally we should import padding but let's hardcode 6 to match renderer for now since it's private there.
+    const padding = 6;
+    const boxLeft = viewPoint.x - padding;
+    const boxTop = viewPoint.y - padding;
+
     return (
-      Math.abs(mouseX - viewPoint.x) < tolerance &&
-      Math.abs(mouseY - viewPoint.y) < tolerance
+      mouseX >= boxLeft - tolerance &&
+      mouseX <= boxLeft + this._boxWidth + tolerance &&
+      mouseY >= boxTop - tolerance &&
+      mouseY <= boxTop + this._boxHeight + tolerance
     );
   }
 }

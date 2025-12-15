@@ -22,9 +22,9 @@ export class TextAnnotationPaneView extends DrawingPaneView {
     const timeScale = this._source.chart.timeScale();
     const series = this._source.series;
 
-    this._point.x = point.time
-      ? timeScale.timeToCoordinate(point.time)
-      : timeScale.logicalToCoordinate(point.logical);
+    // Fallback to logical coordinate if time coordinate is null (happens in future whitespace)
+    const timeCoord = point.time ? timeScale.timeToCoordinate(point.time) : null;
+    this._point.x = timeCoord !== null ? timeCoord : timeScale.logicalToCoordinate(point.logical);
     this._point.y = series.priceToCoordinate(point.price);
     this._text = this._source._text;
   }
@@ -34,7 +34,8 @@ export class TextAnnotationPaneView extends DrawingPaneView {
       this._point,
       this._text,
       this._source._options,
-      this._source.hovered
+      this._source.hovered,
+      (width, height) => this._source._updateDimensions(width, height)
     );
   }
 }

@@ -23,7 +23,7 @@ export class TrendLine extends TwoPointDrawing {
     }
 
     _moveToState(state: InteractionState) {
-        switch(state) {
+        switch (state) {
 
             case InteractionState.NONE:
                 document.body.style.cursor = "default";
@@ -38,7 +38,7 @@ export class TrendLine extends TwoPointDrawing {
                 this.requestUpdate();
                 this._subscribe("mousedown", this._handleMouseDownInteraction);
                 this._unsubscribe("mouseup", this._handleMouseDownInteraction);
-                this.chart.applyOptions({handleScroll: true});
+                this.chart.applyOptions({ handleScroll: true });
                 break;
 
             case InteractionState.DRAGGINGP1:
@@ -46,19 +46,25 @@ export class TrendLine extends TwoPointDrawing {
             case InteractionState.DRAGGING:
                 document.body.style.cursor = "grabbing";
                 this._subscribe("mouseup", this._handleMouseUpInteraction);
-                this.chart.applyOptions({handleScroll: false});
+                this.chart.applyOptions({ handleScroll: false });
                 break;
         }
         this._state = state;
     }
 
 
-     _onDrag(diff: any) {
+    _onDrag(diff: any, shiftPressed: boolean) {
         if (this._state == InteractionState.DRAGGING || this._state == InteractionState.DRAGGINGP1) {
             this._addDiffToPoint(this.p1, diff.logical, diff.price);
+            if (shiftPressed && this._state == InteractionState.DRAGGINGP1 && this.p1 && this.p2) {
+                this.p1.price = this.p2.price;
+            }
         }
         if (this._state == InteractionState.DRAGGING || this._state == InteractionState.DRAGGINGP2) {
             this._addDiffToPoint(this.p2, diff.logical, diff.price);
+            if (shiftPressed && this._state == InteractionState.DRAGGINGP2 && this.p2 && this.p1) {
+                this.p2.price = this.p1.price;
+            }
         }
     }
 
@@ -66,16 +72,16 @@ export class TrendLine extends TwoPointDrawing {
         this._startDragPoint = null;
         const hoverPoint = this._latestHoverPoint;
         if (!hoverPoint) return;
-        const p1  = this._paneViews[0]._p1;
-        const p2  = this._paneViews[0]._p2;
+        const p1 = this._paneViews[0]._p1;
+        const p2 = this._paneViews[0]._p2;
 
         if (!p1.x || !p2.x || !p1.y || !p2.y) return this._moveToState(InteractionState.DRAGGING);
 
         const tolerance = 10;
-        if (Math.abs(hoverPoint.x-p1.x) < tolerance && Math.abs(hoverPoint.y-p1.y) < tolerance) {
+        if (Math.abs(hoverPoint.x - p1.x) < tolerance && Math.abs(hoverPoint.y - p1.y) < tolerance) {
             this._moveToState(InteractionState.DRAGGINGP1)
         }
-        else if (Math.abs(hoverPoint.x-p2.x) < tolerance && Math.abs(hoverPoint.y-p2.y) < tolerance) {
+        else if (Math.abs(hoverPoint.x - p2.x) < tolerance && Math.abs(hoverPoint.y - p2.y) < tolerance) {
             this._moveToState(InteractionState.DRAGGINGP2)
         }
         else {
@@ -91,7 +97,7 @@ export class TrendLine extends TwoPointDrawing {
         const y1 = this._paneViews[0]._p1.y;
         const x2 = this._paneViews[0]._p2.x;
         const y2 = this._paneViews[0]._p2.y;
-        if (!x1 || !x2 || !y1 || !y2 ) return false;
+        if (!x1 || !x2 || !y1 || !y2) return false;
 
         const mouseX = param.point.x;
         const mouseY = param.point.y;
