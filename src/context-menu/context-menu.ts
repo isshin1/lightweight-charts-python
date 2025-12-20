@@ -4,6 +4,7 @@ import { DrawingOptions } from "../drawing/options";
 import { GlobalParams } from "../general/global-params";
 import { ColorPicker } from "./color-picker";
 import { StylePicker } from "./style-picker";
+import { TextToolbar } from "./text-toolbar";
 
 
 export function camelToTitle(inputString: string) {
@@ -57,10 +58,46 @@ export class ContextMenu {
     private _onRightClick(ev: MouseEvent) {
         if (!Drawing.hoveredObject) return;
 
+        ev.preventDefault();
+
         for (const item of this.items) {
             this.div.removeChild(item);
         }
         this.items = [];
+
+        // Check if it's a TextAnnotation
+        if (Drawing.hoveredObject._type === 'TextAnnotation') {
+            const toolbar = new TextToolbar(Drawing.hoveredObject as any, this.saveDrawings);
+            this.div.appendChild(toolbar.div);
+            this.items.push(toolbar.div);
+
+            // Color Picker Integration
+            const colorBox = (toolbar.div as any)._colorBox;
+            if (colorBox) {
+                // Cast 'textColor' to any to bypass strict keyof check if DrawingOptions definition is incomplete or extended dynamically
+                const subMenu = new ColorPicker(this.saveDrawings, 'textColor' as any);
+
+                colorBox.addEventListener('click', () => {
+                    const rect = colorBox.getBoundingClientRect();
+                    subMenu.openMenu(rect);
+                });
+            }
+
+            // Add Separator and Delete
+            this.separator();
+            let onClickDelete = () => {
+                const type = Drawing.lastHoveredObject ? Drawing.lastHoveredObject._type : undefined;
+                this.drawingTool.delete(Drawing.lastHoveredObject);
+                this.saveDrawings(type);
+            }
+            this.menuItem('Delete Drawing', onClickDelete);
+            this.div.style.left = ev.clientX + 'px';
+            this.div.style.top = ev.clientY + 'px';
+            this.div.style.display = 'block';
+            document.body.addEventListener('click', this._handleClick);
+
+            return;
+        }
 
         for (const optionName of Object.keys(Drawing.hoveredObject._options)) {
             let subMenu;
@@ -78,8 +115,9 @@ export class ContextMenu {
         }
 
         let onClickDelete = () => {
+            const type = Drawing.lastHoveredObject ? Drawing.lastHoveredObject._type : undefined;
             this.drawingTool.delete(Drawing.lastHoveredObject);
-            this.saveDrawings();
+            this.saveDrawings(type);
         }
         this.separator()
         this.menuItem('Delete Drawing', onClickDelete)
@@ -103,7 +141,6 @@ export class ContextMenu {
         // contextMenu.menuItem('Delete Drawing', onClickDelete)
 
 
-        ev.preventDefault();
         this.div.style.left = ev.clientX + 'px';
         this.div.style.top = ev.clientY + 'px';
         this.div.style.display = 'block';

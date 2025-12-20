@@ -35,6 +35,7 @@ export class TextAnnotationPaneView extends DrawingPaneView {
       this._text,
       this._source._options,
       this._source.hovered,
+      this._source,
       (width, height) => this._source._updateDimensions(width, height)
     );
   }

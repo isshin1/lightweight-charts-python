@@ -334,3 +334,49 @@ body {
 .modal-input:focus {
 	border-color: var(--active-bg-color);
 }
+
+.alert-plus-button {
+	position: absolute;
+	z-index: 2000;
+	width: 28px;
+	/* Increased slightly to match label */
+	height: 28px;
+	background-color: rgb(55, 55, 55);
+	color: white;
+	border-radius: 4px;
+	/* Rounded corners like reference */
+	display: none;
+	align-items: center;
+	justify-content: center;
+	cursor: pointer;
+	font-weight: bold;
+	font-size: 16px;
+	line-height: 1;
+	pointer-events: auto;
+	/* We will set right/top dynamically or fixed relative to right edge */
+	right: 0px;
+	transform: translateY(-50%);
+}
+
+.alert-plus-button:hover {
+	background-color: #f57c00;
+}
+
+.alert-delete-button {
+	width: 20px;
+	height: 20px;
+	background-color: #d32f2f;
+	border-radius: 4px;
+	display: none;
+	/* Changed via JS */
+	align-items: center;
+	justify-content: center;
+	color: white;
+	box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+	transition: background-color 0.2s;
+	z-index: 1000;
+}
+
+.alert-delete-button:hover {
+	background-color: #b71c1c;
+}

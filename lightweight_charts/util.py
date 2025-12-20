@@ -30,8 +30,12 @@ class IDGen(list):
 
 
 def parse_event_message(window, string):
-    name, args = string.split('_~_')
-    args = args.split(';;;')
+    parts = string.split('_~_')
+    name = parts[0]
+    args_str = parts[1]
+    args = args_str.split(';;;')
+    if len(parts) > 2:
+        args.extend(parts[2:])
     func = window.handlers[name]
     return func, args
 

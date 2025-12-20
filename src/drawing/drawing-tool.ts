@@ -149,7 +149,11 @@ export class DrawingTool {
 
             // Special handling for TextAnnotation - pass default text
             if (this._drawingType === TextAnnotation) {
-                this._activeDrawing = new this._drawingType(point, "Text");
+                // Pass default color options
+                const defaultOptions = {
+                    textColor: '#000000'
+                };
+                this._activeDrawing = new this._drawingType(point, "Text", defaultOptions);
             } else {
                 this._activeDrawing = new this._drawingType(point, point);
             }
@@ -175,10 +179,11 @@ export class DrawingTool {
                 this._activeDrawing.startEditing();
             }
 
+            const type = this._activeDrawing?._type;
             this.stopDrawing();
 
             if (!this._finishDrawingCallback) return;
-            this._finishDrawingCallback();
+            this._finishDrawingCallback(type);
         }
     }
 

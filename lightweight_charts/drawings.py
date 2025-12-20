@@ -278,3 +278,59 @@ class VerticalSpan(Pane):
         Irreversibly deletes the vertical span.
         """
         self.run_script(f'{self._chart.id}.chart.removeSeries({self.id})')
+
+
+class PriceLine(Pane):
+    def __init__(self, series, price, title, color, width, style):
+        super().__init__(series._chart.win)
+        self._series = series
+        # Safe ID handling: ensure we access window explicitly
+        # self.id is likely 'window.abcdef'. We want 'abcdef'.
+        var_name = self.id.split('.')[1] if '.' in self.id else self.id
+        
+        self.run_script(f'''
+        try {{
+            console.log("[PriceLine] Init start for price {price}");
+            if (typeof {series.id} !== 'undefined' && {series.id}.series) {{
+                window['{var_name}'] = {series.id}.series.createPriceLine({{
+                    price: {price},
+                    title: '{title}',
+                    color: '{color}',
+                    lineWidth: {width},
+                    lineStyle: {as_enum(style, LINE_STYLE)},
+                    axisLabelVisible: {str(title != "").lower()}
+                }});
+                console.log("[PriceLine] Created successfully: {var_name}");
+            }} else {{
+                console.error("[PriceLine] Series not found for {var_name}");
+            }}
+        }} catch(e) {{
+            console.error("[PriceLine] Creation FAILED:", e);
+        }}''')
+
+    def delete(self):
+        var_name = self.id.split('.')[1] if '.' in self.id else self.id
+        self.run_script(f'''
+        try {{
+            console.log("[PriceLine] Request delete {var_name}");
+            if (typeof window['{var_name}'] !== 'undefined') {{
+                {self._series.id}.series.removePriceLine(window['{var_name}']);
+                delete window['{var_name}'];
+                console.log("[PriceLine] Deleted {var_name}");
+            }} else {{
+                 console.warn("[PriceLine] Delete skipped: {var_name} not found");
+            }}
+        }} catch(e) {{
+            console.error("[PriceLine] Deletion failed:", e);
+        }}''')
+
+    def update(self, price):
+        var_name = self.id.split('.')[1] if '.' in self.id else self.id
+        self.run_script(f'''
+        try {{
+            if (typeof window['{var_name}'] !== 'undefined') {{
+                window['{var_name}'].applyOptions({{price: {price}}});
+            }}
+        }} catch(e) {{
+            console.error("[PriceLine] Update failed:", e);
+        }}''')

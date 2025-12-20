@@ -11,6 +11,9 @@ export interface TextAnnotationOptions extends DrawingOptions {
   fontFamily?: string;
   textColor?: string;
   backgroundColor?: string;
+  bold?: boolean;
+  italic?: boolean;
+  underline?: boolean;
 }
 
 export class TextAnnotation extends Drawing {
@@ -20,6 +23,11 @@ export class TextAnnotation extends Drawing {
   _hovered: boolean = false;
   _editing: boolean = false;
   _id: string;
+
+  _bold: boolean = false;
+  _italic: boolean = false;
+  _underline: boolean = false;
+  _fontSize: number = 14;
 
   private static _idCounter: number = 0;
 
@@ -45,6 +53,13 @@ export class TextAnnotation extends Drawing {
       this._text = String(text);
     }
 
+    if (options) {
+      this._bold = options.bold ?? false;
+      this._italic = options.italic ?? false;
+      this._underline = options.underline ?? false;
+      if (options.fontSize) this._fontSize = options.fontSize;
+    }
+
     this._points = [point];
     this._paneViews = [new TextAnnotationPaneView(this)];
 
@@ -65,6 +80,18 @@ export class TextAnnotation extends Drawing {
     this.requestUpdate();
   }
 
+  get bold() { return this._bold; }
+  set bold(val: boolean) { this._bold = val; this.requestUpdate(); }
+
+  get italic() { return this._italic; }
+  set italic(val: boolean) { this._italic = val; this.requestUpdate(); }
+
+  get underline() { return this._underline; }
+  set underline(val: boolean) { this._underline = val; this.requestUpdate(); }
+
+  get fontSize() { return this._fontSize; }
+  set fontSize(val: number) { this._fontSize = val; this.requestUpdate(); }
+
   getText(): string {
     return this._text;
   }
@@ -72,6 +99,7 @@ export class TextAnnotation extends Drawing {
   updatePoints(...points: (Point | null)[]) {
     if (points[0]) {
       this._point = points[0];
+      this._points[0] = points[0];
     }
     this.requestUpdate();
   }
@@ -139,7 +167,7 @@ export class TextAnnotation extends Drawing {
     this._showInputModal(this._text, (newText) => {
       if (newText && newText !== this._text) {
         this.setText(newText);
-        document.body.dispatchEvent(new Event('drawing-changed'));
+        document.body.dispatchEvent(new CustomEvent('drawing-changed', { detail: { type: this._type } }));
       }
     });
   }

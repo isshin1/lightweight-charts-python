@@ -45,9 +45,16 @@ class ToolBox:
         with open(file_path, 'w+') as f:
             json.dump(self.drawings, f, indent=4)
 
-    def _save_drawings(self, drawings):
+    def _save_drawings(self, drawings, drawing_type=None):
         if not self._save_under:
             return
         self.drawings[self._save_under.value] = json.loads(drawings)
         if hasattr(self, 'on_drawing_changed') and callable(self.on_drawing_changed):
-            self.on_drawing_changed()
+            if drawing_type:
+                try:
+                    self.on_drawing_changed(drawing_type)
+                except TypeError:
+                     # Fallback for callbacks that don't accept arguments
+                    self.on_drawing_changed()
+            else:
+                self.on_drawing_changed()

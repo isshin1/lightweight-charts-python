@@ -8,7 +8,7 @@ import pandas as pd
 
 from .table import Table
 from .toolbox import ToolBox
-from .drawings import Box, HorizontalLine, RayLine, TrendLine, TwoPointDrawing, VerticalLine, VerticalSpan
+from .drawings import Box, HorizontalLine, RayLine, TrendLine, TwoPointDrawing, VerticalLine, VerticalSpan, PriceLine
 from .topbar import TopBar
 from .util import (
     BulkRunScript, Pane, Events, IDGen, as_enum, jbool, js_json, TIME, NUM, FLOAT,
@@ -380,6 +380,9 @@ class SeriesCommon(Pane):
             priceLineVisible: {jbool(line_visible)},
             title: '{title}',
         }})''')
+
+    def create_price_line(self, price: float = 0.0, title: str = '', color: str = '#FF0000', width: int = 1, style: LINE_STYLE = 'solid') -> 'PriceLine':
+        return PriceLine(self, price, title, color, width, style)
 
     def precision(self, precision: int):
         """

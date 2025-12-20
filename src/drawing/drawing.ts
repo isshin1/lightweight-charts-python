@@ -34,6 +34,8 @@ export abstract class Drawing extends PluginBase {
     protected _latestHoverPoint: any | null = null;
 
     protected static _mouseIsDown: boolean = false;
+    protected _hasDragged: boolean = false;
+    protected _dragStartPixelPoint: { x: number, y: number } | null = null;
 
     public static hoveredObject: Drawing | null = null;
     public static lastHoveredObject: Drawing | null = null;
@@ -255,10 +257,16 @@ export abstract class Drawing extends PluginBase {
         }
     }
 
-    protected _handleMouseDownInteraction = () => {
+    protected _handleMouseDownInteraction = (event: MouseEvent) => {
+        // Only allow left click (button 0) for dragging/interaction
+        console.log('MouseDown Interaction:', { button: event.button, type: event.type, buttons: event.buttons });
+        if (event.button !== 0) return;
+
         // if (Drawing._mouseIsDown) return;
         this._syncPoints();
         Drawing._mouseIsDown = true;
+        this._hasDragged = false;
+        this._dragStartPixelPoint = null;
         this._onMouseDown();
     }
 
@@ -266,6 +274,12 @@ export abstract class Drawing extends PluginBase {
         // if (!Drawing._mouseIsDown) return;
         Drawing._mouseIsDown = false;
         this._moveToState(InteractionState.HOVERING);
+        this._dragStartPixelPoint = null;
+
+        if (this._hasDragged) {
+            document.body.dispatchEvent(new CustomEvent('drawing-changed', { detail: { type: this._type } }));
+            this._hasDragged = false;
+        }
     }
 
     private _handleDragInteraction(param: MouseEventParams, shiftPressed: boolean): void {
@@ -276,6 +290,19 @@ export abstract class Drawing extends PluginBase {
             this._state != InteractionState.DRAGGINGP4) {
             return;
         }
+
+        // Implementing drag threshold to prevent micro-movements from triggering analysis
+        if (!param.point) return;
+
+        if (!this._dragStartPixelPoint) {
+            this._dragStartPixelPoint = param.point;
+            return;
+        } else {
+            const dx = param.point.x - this._dragStartPixelPoint.x;
+            const dy = param.point.y - this._dragStartPixelPoint.y;
+            if (Math.sqrt(dx * dx + dy * dy) < 4) return;
+        }
+
         const mousePoint = Drawing._eventToPoint(param, this.series, this.chart);
         if (!mousePoint) return;
         this._startDragPoint = this._startDragPoint || mousePoint;
@@ -285,6 +312,7 @@ export abstract class Drawing extends PluginBase {
         this.requestUpdate();
 
         this._startDragPoint = mousePoint;
+        this._hasDragged = true;
     }
 
     protected abstract _onMouseDown(): void;

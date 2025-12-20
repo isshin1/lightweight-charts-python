@@ -42,7 +42,7 @@ export class ToolBox {
     constructor(handlerID: string, chart: IChartApi, series: ISeriesApi<SeriesType>, commandFunctions: Function[]) {
         this._handlerID = handlerID;
         this._commandFunctions = commandFunctions;
-        this._drawingTool = new DrawingTool(chart, series, () => this.removeActiveAndSave());
+        this._drawingTool = new DrawingTool(chart, series, (type?: string) => this.removeActiveAndSave(type));
         this.div = this._makeToolBox()
         new ContextMenu(this.saveDrawings, this._drawingTool);
 
@@ -58,19 +58,26 @@ export class ToolBox {
             return false;
         });
 
-        document.body.addEventListener('mouseup', () => {
-            if (Drawing.hoveredObject) this.saveDrawings();
-        });
 
-        document.body.addEventListener('drawing-changed', () => {
-            this.saveDrawings();
+
+        document.body.addEventListener('drawing-changed', (e: Event) => {
+            // If a drawing changed, it might be provided in the event detail (CustomEvent)
+            // fallback to hoveredObject or undefined
+            let type = undefined;
+            if ((e as CustomEvent).detail && (e as CustomEvent).detail.type) {
+                type = (e as CustomEvent).detail.type;
+            } else {
+                type = Drawing.hoveredObject ? Drawing.hoveredObject._type : undefined;
+            }
+            this.saveDrawings(type);
         });
 
         commandFunctions.push((event: KeyboardEvent) => {
             if (event.code === 'Delete' || event.code === 'Backspace') {
                 if (Drawing.hoveredObject) {
+                    const type = Drawing.hoveredObject._type; // Capture type before deletion
                     this._drawingTool.delete(Drawing.hoveredObject);
-                    this.saveDrawings();
+                    this.saveDrawings(type);
                     return true;
                 }
             }
@@ -254,7 +261,7 @@ export class ToolBox {
         this._drawingTool?.beginDrawing(this.activeIcon.type);
     }
 
-    removeActiveAndSave = () => {
+    removeActiveAndSave = (type?: string) => {
         window.setCursor('default');
         if (this.activeIcon) this.activeIcon.div.classList.remove('active-toolbox-button')
         this.activeIcon = null
@@ -262,7 +269,7 @@ export class ToolBox {
         // Re-enable chart interaction when drawing finishes
         this._drawingTool.chart.applyOptions({ handleScroll: true, handleScale: true });
 
-        this.saveDrawings()
+        this.saveDrawings(type)
     }
 
     addNewDrawing(d: Drawing) {
@@ -285,7 +292,7 @@ export class ToolBox {
         return false; // Annotation not found
     }
 
-    saveDrawings = () => {
+    saveDrawings = (type?: string) => {
         const drawingMeta = []
         for (const d of this._drawingTool.drawings) {
             const meta: any = {
@@ -300,7 +307,8 @@ export class ToolBox {
             drawingMeta.push(meta);
         }
         const string = JSON.stringify(drawingMeta);
-        window.callbackFunction(`save_drawings${this._handlerID}_~_${string}`)
+        // Append drawingType to the message to allow filtering on Python side
+        window.callbackFunction(`save_drawings${this._handlerID}_~_${string}_~_${type || ''}`)
     }
 
     loadDrawings(drawings: any[]) { // TODO any
