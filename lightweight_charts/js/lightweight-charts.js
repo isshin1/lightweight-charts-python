@@ -743,11 +743,11 @@
     function createEmptyMarkerData() {
         return {
             _internal_items: [{
-                _internal_x: 0,
-                _internal_y: 0,
-                _internal_time: 0,
-                _internal_price: 0,
-            }],
+                    _internal_x: 0,
+                    _internal_y: 0,
+                    _internal_time: 0,
+                    _internal_price: 0,
+                }],
             _internal_lineColor: '',
             _internal_backColor: '',
             _internal_radius: 0,
@@ -950,8 +950,8 @@
         return borderRadius.map((x) => x === 0 ? x : x + offset);
     }
     function drawRoundRect(
-        // eslint:disable-next-line:max-params
-        ctx, x, y, w, h, radii) {
+    // eslint:disable-next-line:max-params
+    ctx, x, y, w, h, radii) {
         /**
          * As of May 2023, all of the major browsers now support ctx.roundRect() so we should
          * be able to switch to the native version soon.
@@ -1027,12 +1027,7 @@
             if (!this._private__data._internal_visible) {
                 return 0;
             }
-            // ANTI-GRAVITY PATCH START
-            // Original: return rendererOptions._internal_fontSize + rendererOptions._internal_paddingTop + rendererOptions._internal_paddingBottom;
-            return rendererOptions._internal_fontSize + rendererOptions._internal_paddingTop + rendererOptions._internal_paddingBottom +
-                (this._private__commonData._internal_additionalPaddingTop || 0) +
-                (this._private__commonData._internal_additionalPaddingBottom || 0);
-            // ANTI-GRAVITY PATCH END
+            return rendererOptions._internal_fontSize + rendererOptions._internal_paddingTop + rendererOptions._internal_paddingBottom;
         }
         _internal_draw(target, rendererOptions, textWidthCache, align) {
             if (!this._private__data._internal_visible || this._private__data._internal_text.length === 0) {
@@ -1079,15 +1074,16 @@
                 // ANTI-GRAVITY PATCH START
                 const text = this._private__data._internal_text;
                 if (text.includes('\n')) {
-                    // Use standard font
-                    ctx.font = rendererOptions._internal_font;
-
+                    // Force reasonable font size for drawing (ignoring the 38px hack)
+                    ctx.font = "bold 11px Arial";
+                    
                     const lines = text.split('\n');
                     // Draw lines with offsets
                     ctx.fillText(lines[0], gm._internal_xText, (gm._internal_yTop + gm._internal_yBottom) / 2 + gm._internal_textMidCorrection - 9);
                     ctx.fillText(lines[1], gm._internal_xText, (gm._internal_yTop + gm._internal_yBottom) / 2 + gm._internal_textMidCorrection + 9);
-
-                } else {  // Normal behavior for other labels
+                    
+                } else {
+                    // Normal behavior for other labels
                     ctx.fillText(this._private__data._internal_text, gm._internal_xText, (gm._internal_yTop + gm._internal_yBottom) / 2 + gm._internal_textMidCorrection);
                 }
                 // ANTI-GRAVITY PATCH END
@@ -1106,21 +1102,21 @@
             const actualTextHeight = rendererOptions._internal_fontSize;
             const textMidCorrection = textWidthCache._internal_yMidCorrection(ctx, text);
             // ANTI-GRAVITY PATCH START
-            let textWidth;
-            if (text.includes('\n')) {
-                // Temporarily reset font for measurement
-                ctx.save();
-                ctx.font = rendererOptions._internal_font;
-                const lines = text.split('\n');
-                textWidth = Math.ceil(Math.max(
-                    ctx.measureText(lines[0]).width,
-                    ctx.measureText(lines[1]).width
-                ));
-                ctx.restore();
-            } else {
-                textWidth = Math.ceil(textWidthCache._internal_measureText(ctx, text));
-            }
-            // ANTI-GRAVITY PATCH END
+             let textWidth;
+             if (text.includes('\n')) {
+                  // Temporarily reset font for measurement
+                  ctx.save();
+                  ctx.font = "bold 11px Arial";
+                  const lines = text.split('\n');
+                  textWidth = Math.ceil(Math.max(
+                      ctx.measureText(lines[0]).width,
+                      ctx.measureText(lines[1]).width
+                  ));
+                  ctx.restore();
+             } else {
+                  textWidth = Math.ceil(textWidthCache._internal_measureText(ctx, text));
+             }
+             // ANTI-GRAVITY PATCH END
             const totalHeight = actualTextHeight + paddingTop + paddingBottom;
             const totalWidth = rendererOptions._internal_borderSize + paddingInner + paddingOuter + textWidth + tickSize;
             const tickHeightBitmap = Math.max(1, Math.floor(verticalPixelRatio));
@@ -1926,10 +1922,10 @@
     }
 
     // eslint-disable-next-line max-params, complexity
-    function walkLine(renderingScope, items, lineType, visibleRange, barWidth,
-        // the values returned by styleGetter are compared using the operator !==,
-        // so if styleGetter returns objects, then styleGetter should return the same object for equal styles
-        styleGetter, finishStyledArea) {
+    function walkLine(renderingScope, items, lineType, visibleRange, barWidth, 
+    // the values returned by styleGetter are compared using the operator !==,
+    // so if styleGetter returns objects, then styleGetter should return the same object for equal styles
+    styleGetter, finishStyledArea) {
         if (items.length === 0 || visibleRange.from >= items.length || visibleRange.to <= 0) {
             return;
         }
@@ -2130,10 +2126,10 @@
         }
     }
 
-    function drawSeriesPointMarkers(renderingScope, items, pointMarkersRadius, visibleRange,
-        // the values returned by styleGetter are compared using the operator !==,
-        // so if styleGetter returns objects, then styleGetter should return the same object for equal styles
-        styleGetter) {
+    function drawSeriesPointMarkers(renderingScope, items, pointMarkersRadius, visibleRange, 
+    // the values returned by styleGetter are compared using the operator !==,
+    // so if styleGetter returns objects, then styleGetter should return the same object for equal styles
+    styleGetter) {
         const { horizontalPixelRatio, verticalPixelRatio, context } = renderingScope;
         let prevStyle = null;
         const tickWidth = Math.max(1, Math.floor(horizontalPixelRatio));
@@ -2804,8 +2800,8 @@
             const colorer = this._internal__series._internal_barColorer();
             this._internal__items = this._internal__series._internal_bars()._internal_rows()
                 .map((row) => {
-                    return Object.assign(Object.assign({ _internal_time: row._internal_index, _internal_x: NaN }, colorer._internal_barStyle(row._internal_index)), { _internal_originalData: row._internal_data });
-                });
+                return Object.assign(Object.assign({ _internal_time: row._internal_index, _internal_x: NaN }, colorer._internal_barStyle(row._internal_index)), { _internal_originalData: row._internal_data });
+            });
         }
         _internal__convertToCoordinates(priceScale, timeScale) {
             timeScale._internal_indexesToCoordinates(this._internal__items, undefinedIfNull(this._internal__itemsVisibleRange));
@@ -3803,31 +3799,33 @@
                 axisRendererData._internal_text = this._internal__axisText(lastValueData, showSeriesLastValue, showPriceAndPercentage);
                 // ANTI-GRAVITY PATCH START
                 if (axisRendererData._internal_text && this._private__source._internal_seriesType() === 'Candlestick') {
-                    // Check Market Hours (09:15 - 15:30)
-                    const now = new Date();
-                    const totalMins = now.getHours() * 60 + now.getMinutes();
-                    const startMins = 9 * 60 + 15; // 09:15
-                    const endMins = 15 * 60 + 30;  // 15:30
+                     // Check Market Hours (09:15 - 15:30)
+                     const now = new Date();
+                     const totalMins = now.getHours() * 60 + now.getMinutes();
+                     const startMins = 9 * 60 + 15; // 09:15
+                     const endMins = 15 * 60 + 30;  // 15:30
 
-                    if (totalMins >= startMins && totalMins < endMins) {
-                        const interval = window.candleInterval || 60;
-                        const nowSec = Math.floor(now.getTime() / 1000);
-                        const timeLeft = interval - (nowSec % interval);
-                        const m = Math.floor(timeLeft / 60);
-                        const s = timeLeft % 60;
-
-                        // 1. Append Vertical Countdown
-                        axisRendererData._internal_text += '\n' + (m > 0 ? m + ':' : '') + (s < 10 ? '0' : '') + s;
-
-                        // 2. INCREASE HEIGHT via PADDING
-                        // Instead of lying about font size, we ask for more padding.
-                        // Standard height is fontSize + padding (~14px + 6px = 20px).
-                        // We want ~38-40px total. So we add about 20px padding.
-                        if (commonRendererData) {
-                            commonRendererData._internal_additionalPaddingBottom = 13; // Push bottom down
-                            commonRendererData._internal_additionalPaddingTop = 0;
-                        }
-                    }
+                     if (totalMins >= startMins && totalMins < endMins) {
+                         const interval = window.candleInterval;
+                         if (interval) {
+                         const nowSec = Math.floor(now.getTime() / 1000);
+                         const timeLeft = interval - (nowSec % interval); 
+                         const m = Math.floor(timeLeft / 60);
+                         const s = timeLeft % 60;
+                         
+                         // 1. Append Vertical Countdown
+                         axisRendererData._internal_text += '\n' + (m>0?m+':':'') + (s<10?'0':'') + s;
+                         
+                         // 2. SPOOF FONT SIZE to force layout engine to reserve space
+                         // This "lying" forces the red box to be ~50px tall (size is derived from font size)
+                         // which pushes the neighbor labels away.
+                          if (this._private__commonRendererData) {
+                             // Original font was likely "11px ...". We set it to 38px to secure height.
+                             this._private__commonRendererData._internal_font = 'bold 38px Arial';
+                             // Note: we must ensure we reset or handle this in draw() or it draws huge text!
+                          }
+                         }
+                     }
                 }
                 // ANTI-GRAVITY PATCH END
                 axisRendererData._internal_visible = axisRendererData._internal_text.length !== 0;
@@ -8637,10 +8635,10 @@
             }
             isDevicePixelContentBoxSupported()
                 .then(function (isSupported) {
-                    return isSupported ?
-                        _this._initResizeObserver() :
-                        _this._initDevicePixelRatioObservable();
-                });
+                return isSupported ?
+                    _this._initResizeObserver() :
+                    _this._initDevicePixelRatioObservable();
+            });
         };
         // devicePixelRatio approach
         DevicePixelContentBoxBinding.prototype._initDevicePixelRatioObservable = function () {
@@ -8669,14 +8667,14 @@
             }
             var ratio = (_b = (_a = this._devicePixelRatioObservable) === null || _a === void 0 ? void 0 : _a.value) !== null && _b !== void 0 ? _b : win.devicePixelRatio;
             var canvasRects = this._canvasElement.getClientRects();
-            var newSize =
-                // eslint-disable-next-line no-negated-condition
-                canvasRects[0] !== undefined ?
-                    predictedBitmapSize(canvasRects[0], ratio) :
-                    size({
-                        width: this._canvasElementClientSize.width * ratio,
-                        height: this._canvasElementClientSize.height * ratio,
-                    });
+            var newSize = 
+            // eslint-disable-next-line no-negated-condition
+            canvasRects[0] !== undefined ?
+                predictedBitmapSize(canvasRects[0], ratio) :
+                size({
+                    width: this._canvasElementClientSize.width * ratio,
+                    height: this._canvasElementClientSize.height * ratio,
+                });
             this._suggestNewBitmapSize(newSize);
         };
         // ResizeObserver approach
@@ -11104,8 +11102,8 @@
         _internal_optimalHeight() {
             const rendererOptions = this._private__getRendererOptions();
             return Math.ceil(
-                // rendererOptions.offsetSize +
-                rendererOptions._internal_borderSize +
+            // rendererOptions.offsetSize +
+            rendererOptions._internal_borderSize +
                 rendererOptions._internal_tickLength +
                 rendererOptions._internal_fontSize +
                 rendererOptions._internal_paddingTop +
@@ -12748,29 +12746,29 @@
             return;
         }
         assert(
-            // eslint-disable-next-line @typescript-eslint/tslint/config
-            typeof barItem.open === 'number', `${type} series item data value of open must be a number, got=${typeof barItem.open}, value=${barItem.open}`);
+        // eslint-disable-next-line @typescript-eslint/tslint/config
+        typeof barItem.open === 'number', `${type} series item data value of open must be a number, got=${typeof barItem.open}, value=${barItem.open}`);
         assert(
-            // eslint-disable-next-line @typescript-eslint/tslint/config
-            typeof barItem.high === 'number', `${type} series item data value of high must be a number, got=${typeof barItem.high}, value=${barItem.high}`);
+        // eslint-disable-next-line @typescript-eslint/tslint/config
+        typeof barItem.high === 'number', `${type} series item data value of high must be a number, got=${typeof barItem.high}, value=${barItem.high}`);
         assert(
-            // eslint-disable-next-line @typescript-eslint/tslint/config
-            typeof barItem.low === 'number', `${type} series item data value of low must be a number, got=${typeof barItem.low}, value=${barItem.low}`);
+        // eslint-disable-next-line @typescript-eslint/tslint/config
+        typeof barItem.low === 'number', `${type} series item data value of low must be a number, got=${typeof barItem.low}, value=${barItem.low}`);
         assert(
-            // eslint-disable-next-line @typescript-eslint/tslint/config
-            typeof barItem.close === 'number', `${type} series item data value of close must be a number, got=${typeof barItem.close}, value=${barItem.close}`);
+        // eslint-disable-next-line @typescript-eslint/tslint/config
+        typeof barItem.close === 'number', `${type} series item data value of close must be a number, got=${typeof barItem.close}, value=${barItem.close}`);
     }
     function checkLineItem(type, lineItem) {
         if (!isFulfilledData(lineItem)) {
             return;
         }
         assert(
-            // eslint-disable-next-line @typescript-eslint/tslint/config
-            typeof lineItem.value === 'number', `${type} series item data value must be a number, got=${typeof lineItem.value}, value=${lineItem.value}`);
+        // eslint-disable-next-line @typescript-eslint/tslint/config
+        typeof lineItem.value === 'number', `${type} series item data value must be a number, got=${typeof lineItem.value}, value=${lineItem.value}`);
     }
     function checkCustomItem(
-        // type: 'Custom',
-        // customItem: SeriesDataItemTypeMap[typeof type]
+    // type: 'Custom',
+    // customItem: SeriesDataItemTypeMap[typeof type]
     ) {
         // Nothing to check yet...
         return;
@@ -13418,16 +13416,16 @@
 
     var LightweightChartsModule = /*#__PURE__*/Object.freeze({
         __proto__: null,
-        get ColorType() { return ColorType; },
-        get CrosshairMode() { return CrosshairMode; },
-        get LastPriceAnimationMode() { return LastPriceAnimationMode; },
-        get LineStyle() { return LineStyle; },
-        get LineType() { return LineType; },
-        get MismatchDirection() { return MismatchDirection; },
-        get PriceLineSource() { return PriceLineSource; },
-        get PriceScaleMode() { return PriceScaleMode; },
-        get TickMarkType() { return TickMarkType; },
-        get TrackingModeExitMode() { return TrackingModeExitMode; },
+        get ColorType () { return ColorType; },
+        get CrosshairMode () { return CrosshairMode; },
+        get LastPriceAnimationMode () { return LastPriceAnimationMode; },
+        get LineStyle () { return LineStyle; },
+        get LineType () { return LineType; },
+        get MismatchDirection () { return MismatchDirection; },
+        get PriceLineSource () { return PriceLineSource; },
+        get PriceScaleMode () { return PriceScaleMode; },
+        get TickMarkType () { return TickMarkType; },
+        get TrackingModeExitMode () { return TrackingModeExitMode; },
         createChart: createChart,
         createChartEx: createChartEx,
         customSeriesDefaultOptions: customSeriesDefaultOptions,
