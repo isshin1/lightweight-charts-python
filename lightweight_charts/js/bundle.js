@@ -242,7 +242,8 @@ var Lib = function (t, e) {
     _handleClick() {
       if (this.currentPrice !== null) {
         // Remove existing context menus
-        const existing = document.querySelectorAll('.context-menu');
+        // Remove existing context menus
+        const existing = document.querySelectorAll('.alert-context-menu');
         existing.forEach(el => {
           if (el.parentNode) el.parentNode.removeChild(el);
         });
@@ -257,7 +258,7 @@ var Lib = function (t, e) {
   class AlertMenu {
     constructor(handler, price, onAddAlert) {
       this.div = document.createElement('div');
-      this.div.className = 'context-menu';
+      this.div.className = 'context-menu alert-context-menu';
       this.div.style.display = 'block';
 
       // Item: Add Alert
