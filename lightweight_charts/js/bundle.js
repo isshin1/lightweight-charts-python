@@ -241,6 +241,12 @@ var Lib = function (t, e) {
 
     _handleClick() {
       if (this.currentPrice !== null) {
+        // Remove existing context menus
+        const existing = document.querySelectorAll('.context-menu');
+        existing.forEach(el => {
+          if (el.parentNode) el.parentNode.removeChild(el);
+        });
+
         new AlertMenu(this.handler, this.currentPrice, (price) => {
           window.callbackFunction('add_alert_~_' + price.toFixed(2));
         });

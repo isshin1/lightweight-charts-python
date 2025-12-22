@@ -1027,7 +1027,11 @@
             if (!this._private__data._internal_visible) {
                 return 0;
             }
-            return rendererOptions._internal_fontSize + rendererOptions._internal_paddingTop + rendererOptions._internal_paddingBottom;
+            // ANTI-GRAVITY PATCH START - Double height for multi-line text
+            const hasMultiline = this._private__data && this._private__data._internal_text && this._private__data._internal_text.includes('\n');
+            const heightMultiplier = hasMultiline ? 2.2 : 1;
+            return (rendererOptions._internal_fontSize * heightMultiplier) + rendererOptions._internal_paddingTop + rendererOptions._internal_paddingBottom;
+            // ANTI-GRAVITY PATCH END
         }
         _internal_draw(target, rendererOptions, textWidthCache, align) {
             if (!this._private__data._internal_visible || this._private__data._internal_text.length === 0) {
@@ -1074,11 +1078,11 @@
                 // ANTI-GRAVITY PATCH START
                 const text = this._private__data._internal_text;
                 if (text.includes('\n')) {
-                    // Force reasonable font size for drawing (ignoring the 38px hack)
-                    ctx.font = "bold 11px Arial";
+                    // Force reasonable font size for drawing (ignoring the 44px hack)
+                    ctx.font = "bold 14px Arial";
                     
                     const lines = text.split('\n');
-                    // Draw lines with offsets
+                    // Draw lines with offsets (larger offset for 14px font)
                     ctx.fillText(lines[0], gm._internal_xText, (gm._internal_yTop + gm._internal_yBottom) / 2 + gm._internal_textMidCorrection - 9);
                     ctx.fillText(lines[1], gm._internal_xText, (gm._internal_yTop + gm._internal_yBottom) / 2 + gm._internal_textMidCorrection + 9);
                     
@@ -1106,7 +1110,7 @@
              if (text.includes('\n')) {
                   // Temporarily reset font for measurement
                   ctx.save();
-                  ctx.font = "bold 11px Arial";
+                  ctx.font = "bold 14px Arial";
                   const lines = text.split('\n');
                   textWidth = Math.ceil(Math.max(
                       ctx.measureText(lines[0]).width,
@@ -1117,7 +1121,11 @@
                   textWidth = Math.ceil(textWidthCache._internal_measureText(ctx, text));
              }
              // ANTI-GRAVITY PATCH END
-            const totalHeight = actualTextHeight + paddingTop + paddingBottom;
+            // ANTI-GRAVITY PATCH START - Geometry Height
+            const hasMultilineHeight = text.includes('\n');
+            const heightFactor = hasMultilineHeight ? 2.2 : 1;
+            const totalHeight = (actualTextHeight * heightFactor) + paddingTop + paddingBottom;
+            // ANTI-GRAVITY PATCH END
             const totalWidth = rendererOptions._internal_borderSize + paddingInner + paddingOuter + textWidth + tickSize;
             const tickHeightBitmap = Math.max(1, Math.floor(verticalPixelRatio));
             let totalHeightBitmap = Math.round(totalHeight * verticalPixelRatio);
@@ -3810,18 +3818,29 @@
                          if (interval) {
                          const nowSec = Math.floor(now.getTime() / 1000);
                          const timeLeft = interval - (nowSec % interval); 
-                         const m = Math.floor(timeLeft / 60);
-                         const s = timeLeft % 60;
+                         
+                         let timeStr = "";
+                         if (interval >= 3600) {
+                             const h = Math.floor(timeLeft / 3600);
+                             const m = Math.floor((timeLeft % 3600) / 60);
+                             const s = timeLeft % 60;
+                             timeStr = (h < 10 ? "0" : "") + h + ":" + (m < 10 ? "0" : "") + m + ":" + (s < 10 ? "0" : "") + s;
+                         } else {
+                             const m = Math.floor(timeLeft / 60);
+                             const s = timeLeft % 60;
+                             timeStr = (m < 10 ? "0" : "") + m + ":" + (s < 10 ? "0" : "") + s;
+                         }
                          
                          // 1. Append Vertical Countdown
-                         axisRendererData._internal_text += '\n' + (m>0?m+':':'') + (s<10?'0':'') + s;
+                         axisRendererData._internal_text += '\n' + timeStr;
                          
-                         // 2. SPOOF FONT SIZE to force layout engine to reserve space
+                          // 2. SPOOF FONT SIZE to force layout engine to reserve space
                          // This "lying" forces the red box to be ~50px tall (size is derived from font size)
                          // which pushes the neighbor labels away.
                           if (this._private__commonRendererData) {
-                             // Original font was likely "11px ...". We set it to 38px to secure height.
-                             this._private__commonRendererData._internal_font = 'bold 38px Arial';
+                             // Original font was likely "14px ...". We set it to 44px to secure height.
+                             this._private__commonRendererData._internal_font = 'bold 44px Arial';
+                             this._private__commonRendererData._internal_fontSize = 44;
                              // Note: we must ensure we reset or handle this in draw() or it draws huge text!
                           }
                          }
