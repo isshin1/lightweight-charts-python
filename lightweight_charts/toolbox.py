@@ -1,8 +1,11 @@
 import json
+import logging
 
+logger = logging.getLogger("lightweight_charts")
 
 class ToolBox:
     def __init__(self, chart):
+        logger.debug(f"[DEBUG] ToolBox init for chart {chart.id}")
         self.run_script = chart.run_script
         self.id = chart.id
         self._save_under = None
@@ -14,6 +17,7 @@ class ToolBox:
         """
         Drawings made on charts will be saved under the widget given. eg `chart.toolbox.save_drawings_under(chart.topbar['symbol'])`.
         """
+        logger.debug(f"[DEBUG] ToolBox.save_drawings_under called for chart {self.id}")
         self._save_under = widget
 
     def load_drawings(self, tag: str):
@@ -46,15 +50,19 @@ class ToolBox:
             json.dump(self.drawings, f, indent=4)
 
     def _save_drawings(self, drawings, drawing_type=None):
+        logger.debug(f"[DEBUG] ToolBox._save_drawings called with type: '{drawing_type}'")
         if not self._save_under:
+            logger.debug("[DEBUG] ToolBox._save_drawings: No _save_under set!")
             return
         self.drawings[self._save_under.value] = json.loads(drawings)
         if hasattr(self, 'on_drawing_changed') and callable(self.on_drawing_changed):
+            logger.debug("[DEBUG] ToolBox calling on_drawing_changed callback...")
             if drawing_type:
                 try:
                     self.on_drawing_changed(drawing_type)
                 except TypeError:
-                     # Fallback for callbacks that don't accept arguments
                     self.on_drawing_changed()
             else:
                 self.on_drawing_changed()
+        else:
+            logger.debug("[DEBUG] ToolBox has no on_drawing_changed callback!")

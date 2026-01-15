@@ -1,10 +1,14 @@
 import asyncio
 import json
 import os
+import time
 from base64 import b64decode
 from datetime import datetime
 from typing import Callable, Union, Literal, List, Optional
 import pandas as pd
+import logging
+
+logger = logging.getLogger("lightweight_charts")
 
 from .table import Table
 from .toolbox import ToolBox
@@ -22,7 +26,6 @@ INDEX = os.path.join(current_dir, 'js', 'index.html')
 
 class Window:
     _id_gen = IDGen()
-    handlers = {}
 
     def __init__(
         self,
@@ -30,6 +33,7 @@ class Window:
         js_api_code: Optional[str] = None,
         run_script: Optional[Callable] = None
     ):
+        self.handlers = {}
         self.loaded = False
         self.script_func = script_func
         self.scripts = []
@@ -43,9 +47,18 @@ class Window:
             self.run_script(f'window.callbackFunction = {js_api_code}')
 
     def on_js_load(self):
+        import logging
+        logger = logging.getLogger("lightweight_charts")
+        logger.info(f"[DEBUG] on_js_load called: loaded={self.loaded}, final_scripts_count={len(self.final_scripts)}")
+        
         if self.loaded:
+            logger.info("[DEBUG] on_js_load SKIPPED (already loaded)")
             return
         self.loaded = True
+        
+        # Count syncCharts scripts
+        sync_count = sum(1 for s in self.final_scripts if 'syncCharts' in s)
+        logger.info(f"[DEBUG] on_js_load executing: {len(self.scripts)} regular + {len(self.final_scripts)} final scripts ({sync_count} syncCharts)")
 
         if hasattr(self, '_return_q'):
             while not self.run_script_and_get('document.readyState == "complete"'):
@@ -61,14 +74,26 @@ class Window:
         """
         For advanced users; evaluates JavaScript within the Webview.
         """
+        import logging
+        logger = logging.getLogger("lightweight_charts")
         if self.script_func is None:
             raise AttributeError("script_func has not been set")
+        
+        # Debug: log if this is a syncCharts script
+        is_sync_script = 'syncCharts' in script[:100] if len(script) > 100 else 'syncCharts' in script
+        if is_sync_script:
+            logger.info(f"[DEBUG] run_script syncCharts: loaded={self.loaded}, run_last={run_last}")
+        
         if self.loaded:
             if self.bulk_run.enabled:
                 self.bulk_run.add_script(script)
             else:
+                if is_sync_script:
+                    logger.info("[DEBUG] Executing syncCharts IMMEDIATELY (loaded=True)")
                 self.script_func(script)
         elif run_last:
+            if is_sync_script:
+                logger.info("[DEBUG] Queueing syncCharts for later (run_last=True, loaded=False)")
             self.final_scripts.append(script)
         else:
             self.scripts.append(script)
@@ -116,12 +141,52 @@ class Window:
         )
         if not sync_id:
             return subchart
+        # Use a robust retry mechanism that handles all timing scenarios
+        # The script checks for chart existence at the JS level, not Python level
+        import logging
+        logger = logging.getLogger("lightweight_charts")
+        logger.info(f"[DEBUG] Queueing syncCharts script for {subchart.id} + {sync_id}")
         self.run_script(f'''
-            Lib.Handler.syncCharts(
-                {subchart.id},
-                {sync_id},
-                {jbool(sync_crosshairs_only)}
-            )
+            console.log("[DEBUG] syncCharts SCRIPT STARTING for {subchart.id} + {sync_id}");
+            (function initSync() {{
+                var retries = 0;
+                var maxRetries = 20;  // 10 seconds total (20 * 500ms)
+                
+                function doSync() {{
+                    retries++;
+                    
+                    // Get chart objects fresh each retry (they may be created after script starts)
+                    var chart1 = window["{subchart.id.replace('window.', '')}"];
+                    var chart2 = window["{sync_id.replace('window.', '')}"];
+                    
+                    console.log("[DEBUG] syncCharts attempt " + retries + 
+                                ": chart1=" + !!chart1 + " chart1.wrapper=" + !!(chart1 && chart1.wrapper) +
+                                " chart2=" + !!chart2 + " chart2.wrapper=" + !!(chart2 && chart2.wrapper));
+                    
+                    // Check if both charts and their wrappers exist
+                    if (!chart1 || !chart1.wrapper || !chart2 || !chart2.wrapper) {{
+                        if (retries < maxRetries) {{
+                            setTimeout(doSync, 500);
+                            return;
+                        }} else {{
+                            console.error("[DEBUG] syncCharts failed after " + maxRetries + " retries: charts not ready");
+                            console.error("[DEBUG] chart1=" + !!chart1 + " chart2=" + !!chart2);
+                            return;
+                        }}
+                    }}
+                    
+                    console.log("[DEBUG] Calling Lib.Handler.syncCharts for " + "{subchart.id}" + " and " + "{sync_id}");
+                    try {{
+                        Lib.Handler.syncCharts(chart1, chart2, {jbool(sync_crosshairs_only)});
+                        console.log("[DEBUG] syncCharts call completed successfully!");
+                    }} catch(e) {{
+                        console.error("[DEBUG] syncCharts error:", e);
+                    }}
+                }}
+                
+                // Start with a delay to ensure we're called after chart creation
+                setTimeout(doSync, 500);
+            }})();
         ''', run_last=True)
         return subchart
 
@@ -241,10 +306,28 @@ class SeriesCommon(Pane):
             self.data.loc[self.data.index[-1]] = self._last_bar
             self.data = pd.concat([self.data, series.to_frame().T], ignore_index=True)
         self._last_bar = series
-        self.run_script(f'{self.id}.series.update({js_data(series)})')
+        self.run_script(f'''
+            try {{
+                if ({self.id}.series && typeof {self.id}.series.update === 'function') {{
+                    {self.id}.series.update({js_data(series)});
+                }} else {{
+                    console.warn("Series update failed: series.update is not a function or series is missing for {self.id}");
+                }}
+            }} catch(e) {{
+                console.warn("Series update critical error:", e);
+            }}
+        ''')
 
     def _update_markers(self):
-        self.run_script(f'{self.id}.series.setMarkers({json.dumps(list(self.markers.values()))})')
+        markers = list(self.markers.values())
+        markers.sort(key=lambda x: x['time'])
+        self.run_script(f"""
+            if ({self.id}.series && typeof {self.id}.series.setMarkers === 'function') {{
+                {self.id}.series.setMarkers({json.dumps(markers)});
+            }} else {{
+                console.warn('setMarkers not supported on series for chart {self.id}');
+            }}
+        """)
 
     def marker_list(self, markers: list):
         """
@@ -326,6 +409,8 @@ class SeriesCommon(Pane):
         line_color: str = '#1E80F0',
         width: int = 2,
         style: LINE_STYLE = 'solid',
+        text: str = '',
+        text_position: str = 'above',
     ) -> TwoPointDrawing:
         return TrendLine(*locals().values())
 
@@ -406,6 +491,13 @@ class SeriesCommon(Pane):
         self.run_script(f'''
         {self.id}.series.applyOptions({{visible: {jbool(arg)}}})
         if ('volumeSeries' in {self.id}) {self.id}.volumeSeries.applyOptions({{visible: {jbool(arg)}}})
+        if ({self._chart.id}.legend) {{
+            try {{
+                {self._chart.id}.legend.updateSeriesVisibility('{self.name}')
+            }} catch (e) {{
+                console.warn('Legend sync failed:', e);
+            }}
+        }}
         ''')
 
     def vertical_span(
@@ -476,13 +568,22 @@ class Line(SeriesCommon):
         self._chart._lines.remove(self) if self in self._chart._lines else None
         self.run_script(f'''
             {self.id}legendItem = {self._chart.id}.legend._lines.find((line) => line.series == {self.id}.series)
-            {self._chart.id}.legend._lines = {self._chart.id}.legend._lines.filter((item) => item != {self.id}legendItem)
-
             if ({self.id}legendItem) {{
-                {self._chart.id}.legend.div.removeChild({self.id}legendItem.row)
+                {self._chart.id}.legend._lines = {self._chart.id}.legend._lines.filter((item) => item != {self.id}legendItem)
+                try {{
+                    if ({self.id}legendItem.row && {self.id}legendItem.row.parentNode) {{
+                        {self.id}legendItem.row.parentNode.removeChild({self.id}legendItem.row)
+                    }}
+                }} catch(e) {{
+                     console.warn('Delete legend item failed:', e)
+                }}
             }}
 
-            {self._chart.id}.chart.removeSeries({self.id}.series)
+            try {{
+                {self._chart.id}.chart.removeSeries({self.id}.series)
+            }} catch(e) {{
+                console.warn('Remove series failed:', e)
+            }}
             delete {self.id}legendItem
             delete {self.id}
         ''')
@@ -514,13 +615,22 @@ class Histogram(SeriesCommon):
         """
         self.run_script(f'''
             {self.id}legendItem = {self._chart.id}.legend._lines.find((line) => line.series == {self.id}.series)
-            {self._chart.id}.legend._lines = {self._chart.id}.legend._lines.filter((item) => item != {self.id}legendItem)
-
             if ({self.id}legendItem) {{
-                {self._chart.id}.legend.div.removeChild({self.id}legendItem.row)
+                {self._chart.id}.legend._lines = {self._chart.id}.legend._lines.filter((item) => item != {self.id}legendItem)
+                try {{
+                    if ({self.id}legendItem.row && {self.id}legendItem.row.parentNode) {{
+                        {self.id}legendItem.row.parentNode.removeChild({self.id}legendItem.row)
+                    }}
+                }} catch(e) {{
+                   console.warn('Delete histogram legend item failed:', e)
+                }}
             }}
 
-            {self._chart.id}.chart.removeSeries({self.id}.series)
+            try {{
+                {self._chart.id}.chart.removeSeries({self.id}.series)
+            }} catch(e) {{
+                console.warn('Remove histogram series failed:', e)
+            }}
             delete {self.id}legendItem
             delete {self.id}
         ''')
@@ -553,17 +663,21 @@ class Candlestick(SeriesCommon):
             self.run_script(f'{self.id}.volumeSeries.setData([])')
             self.candle_data = pd.DataFrame()
             return
+        
         df = self._df_datetime_format(df)
+        
+        # [REVERTED] Auto-correction removed as it caused label issues on chart
+        # We accept Naive IST timestamps as "UTC" for display purposes
+        
         self.candle_data = df.copy()
         self._last_bar = df.iloc[-1]
         self.run_script(f'{self.id}.series.setData({js_data(df)})')
 
-        if 'volume' not in df:
-            return
-        volume = df.drop(columns=['open', 'high', 'low', 'close']).rename(columns={'volume': 'value'})
-        volume['color'] = self._volume_down_color
-        volume.loc[df['close'] > df['open'], 'color'] = self._volume_up_color
-        self.run_script(f'{self.id}.volumeSeries.setData({js_data(volume)})')
+        if 'volume' in df:
+            volume = df.drop(columns=['open', 'high', 'low', 'close']).rename(columns={'volume': 'value'})
+            volume['color'] = self._volume_down_color
+            volume.loc[df['close'] > df['open'], 'color'] = self._volume_up_color
+            self.run_script(f'{self.id}.volumeSeries.setData({js_data(volume)})')
 
         for line in self._lines:
             if line.name not in df.columns:
@@ -574,6 +688,55 @@ class Candlestick(SeriesCommon):
             if (!{self.id}.chart.priceScale("right").options.autoScale)
                 {self.id}.chart.priceScale("right").applyOptions({{autoScale: true}})
         ''')
+        
+        # [NEW] Force visible range to last 300 bars (using Timestamps)
+        data_len = len(df)
+        if data_len > 0:
+            start_idx = max(0, data_len - 300)
+            
+            # Ensure integer timestamps for JS safety
+            from_time = int(df.iloc[start_idx]['time'])
+            last_time = int(df.iloc[-1]['time'])
+            
+            # Use self._interval which was calculated from the MODE (most common interval)
+            # in _set_interval(). This is more reliable than averaging visible bars,
+            # which can be inflated by overnight/weekend gaps.
+            # Fallback: If _interval seems unreasonable, use 300 seconds (5 min).
+            bar_interval = self._interval if 0 < self._interval <= 86400 else 300
+                
+            # Add 20 bars of empty space to the right
+            margin_seconds = 20 * bar_interval
+            
+            # Sanity check: Cap margin at 7 days (604800 seconds) to prevent future date bugs
+            margin_seconds = min(margin_seconds, 604800)
+            
+            to_time = int(last_time + margin_seconds)
+            
+            # Enhanced debug with human-readable dates
+            from datetime import datetime as dt
+            from_dt = dt.fromtimestamp(from_time).strftime('%Y-%m-%d %H:%M')
+            last_dt = dt.fromtimestamp(last_time).strftime('%Y-%m-%d %H:%M')
+            to_dt = dt.fromtimestamp(to_time).strftime('%Y-%m-%d %H:%M')
+            logger.debug(f"DEBUG: Set Range - Len: {data_len}, Interval: {bar_interval}s")
+            logger.debug(f"DEBUG:   From: {from_time} ({from_dt})")
+            logger.debug(f"DEBUG:   Last: {last_time} ({last_dt})")
+            logger.debug(f"DEBUG:   To:   {to_time} ({to_dt})")
+            
+            # Use setTimeout with a delay to ensure data is fully processed before setting range
+            self.run_script(f'''
+                setTimeout(() => {{
+                    try {{
+                        const ts = {self._chart.id}.chart.timeScale();
+                        ts.setVisibleRange({{ from: {from_time}, to: {to_time} }});
+                        console.log("SetVisibleRange applied: from={from_time}, to={to_time}");
+                    }} catch (e) {{
+                        console.error("SetVisibleRange Error:", e);
+                        // Fallback: just fit content
+                        {self._chart.id}.chart.timeScale().fitContent();
+                    }}
+                }}, 50);
+            ''')
+
         # TODO keep drawings doesn't work consistenly w
         if keep_drawings:
             self.run_script(f'{self._chart.id}.toolBox?._drawingTool.repositionOnTime()')
@@ -587,8 +750,11 @@ class Candlestick(SeriesCommon):
         :param series: labels: date/time, open, high, low, close, volume (if using volume).
         """
         series = self._series_datetime_format(series) if not _from_tick else series
-        if series['time'] != self._last_bar['time']:
-            self.candle_data.loc[self.candle_data.index[-1]] = self._last_bar
+        if self._last_bar is not None and series['time'] != self._last_bar['time']:
+            if not self.candle_data.empty:
+                self.candle_data.loc[self.candle_data.index[-1]] = self._last_bar
+            else:
+                 self.candle_data = pd.concat([self.candle_data, self._last_bar.to_frame().T], ignore_index=True)
             self.candle_data = pd.concat([self.candle_data, series.to_frame().T], ignore_index=True)
             self._chart.events.new_bar._emit(self)
 
@@ -607,10 +773,10 @@ class Candlestick(SeriesCommon):
         :param cumulative_volume: Adds the given volume onto the latest bar.
         """
         series = self._series_datetime_format(series)
-        if series['time'] < self._last_bar['time']:
+        if self._last_bar is not None and series['time'] < self._last_bar['time']:
             raise ValueError(f'Trying to update tick of time "{pd.to_datetime(series["time"])}", which occurs before the last bar time of "{pd.to_datetime(self._last_bar["time"])}".')
         bar = pd.Series(dtype='float64')
-        if series['time'] == self._last_bar['time']:
+        if self._last_bar is not None and series['time'] == self._last_bar['time']:
             bar = self._last_bar
             bar['high'] = max(self._last_bar['high'], series['price'])
             bar['low'] = min(self._last_bar['low'], series['price'])
@@ -725,12 +891,13 @@ class AbstractChart(Candlestick, Pane):
     def create_line(
             self, name: str = '', color: str = 'rgba(214, 237, 255, 0.6)',
             style: LINE_STYLE = 'solid', width: int = 2,
-            price_line: bool = True, price_label: bool = True, price_scale_id: Optional[str] = None
+            price_line: bool = True, price_label: bool = True, price_scale_id: Optional[str] = None,
+            crosshair_marker: bool = True
     ) -> Line:
         """
         Creates and returns a Line object.
         """
-        self._lines.append(Line(self, name, color, style, width, price_line, price_label, price_scale_id))
+        self._lines.append(Line(self, name, color, style, width, price_line, price_label, price_scale_id, crosshair_marker))
         return self._lines[-1]
 
     def create_histogram(
@@ -957,8 +1124,20 @@ class AbstractChart(Candlestick, Pane):
                         sync: Optional[Union[str, bool]] = None, scale_candles_only: bool = False,
                         sync_crosshairs_only: bool = False,
                         toolbox: bool = False) -> 'AbstractChart':
+        import logging
+        logger = logging.getLogger("lightweight_charts")
+        logger.info(f"[DEBUG] AbstractChart.create_subchart called: sync={sync}, self.id={self.id}")
         if sync is True:
             sync = self.id
-        args = locals()
-        del args['self']
-        return self.win.create_subchart(*args.values())
+            logger.info(f"[DEBUG] sync=True converted to sync={sync}")
+        result = self.win.create_subchart(
+            position=position,
+            width=width,
+            height=height,
+            sync_id=sync,
+            scale_candles_only=scale_candles_only,
+            sync_crosshairs_only=sync_crosshairs_only,
+            toolbox=toolbox
+        )
+        logger.info(f"[DEBUG] Window.create_subchart returned subchart.id={result.id}")
+        return result

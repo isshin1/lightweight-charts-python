@@ -5,6 +5,10 @@ export interface DrawingOptions {
     lineColor: string;
     lineStyle: LineStyle
     width: number;
+    // Label properties (optional)
+    text?: string;
+    textPosition?: 'above' | 'below';
+    labelPos?: number;  // Position along the line (0 to 1, default 0.5)
 }
 
 export const defaultOptions: DrawingOptions = {

@@ -32,10 +32,14 @@ class IDGen(list):
 def parse_event_message(window, string):
     parts = string.split('_~_')
     name = parts[0]
-    args_str = parts[1]
-    args = args_str.split(';;;')
-    if len(parts) > 2:
-        args.extend(parts[2:])
+    if len(parts) > 1:
+        args_str = parts[1]
+        args = args_str.split(';;;')
+        if len(parts) > 2:
+            args.extend(parts[2:])
+    else:
+        args = []
+    
     func = window.handlers[name]
     return func, args
 
@@ -151,28 +155,32 @@ class Events:
         salt = chart.id[chart.id.index('.')+1:]
         self.range_change = JSEmitter(chart, f'range_change{salt}',
             lambda o: chart.run_script(f'''
-            let checkLogicalRange{salt} = (logical) => {{
-                {chart.id}.chart.timeScale().unsubscribeVisibleLogicalRangeChange(checkLogicalRange{salt})
-                
-                let barsInfo = {chart.id}.series.barsInLogicalRange(logical)
-                if (barsInfo) window.callbackFunction(`range_change{salt}_~_${{barsInfo.barsBefore}};;;${{barsInfo.barsAfter}}`)
+            if (typeof checkLogicalRange{salt} === 'undefined') {{
+                var checkLogicalRange{salt} = (logical) => {{
+                    {chart.id}.chart.timeScale().unsubscribeVisibleLogicalRangeChange(checkLogicalRange{salt})
                     
-                setTimeout(() => {chart.id}.chart.timeScale().subscribeVisibleLogicalRangeChange(checkLogicalRange{salt}), 50)
+                    let barsInfo = {chart.id}.series.barsInLogicalRange(logical)
+                    if (barsInfo) window.callbackFunction(`range_change{salt}_~_${{barsInfo.barsBefore}};;;${{barsInfo.barsAfter}}`)
+                        
+                    setTimeout(() => {chart.id}.chart.timeScale().subscribeVisibleLogicalRangeChange(checkLogicalRange{salt}), 50)
+                }}
+                {chart.id}.chart.timeScale().subscribeVisibleLogicalRangeChange(checkLogicalRange{salt})
             }}
-            {chart.id}.chart.timeScale().subscribeVisibleLogicalRangeChange(checkLogicalRange{salt})
             '''),
             wrapper=lambda o, c, *arg: o(c, *[float(a) for a in arg])
         )
 
         self.click = JSEmitter(chart, f'subscribe_click{salt}',
             lambda o: chart.run_script(f'''
-            let clickHandler{salt} = (param) => {{
-                if (!param.point) return;
-                const time = {chart.id}.chart.timeScale().coordinateToTime(param.point.x)
-                const price = {chart.id}.series.coordinateToPrice(param.point.y);
-                window.callbackFunction(`subscribe_click{salt}_~_${{time}};;;${{price}}`)
+            if (typeof clickHandler{salt} === 'undefined') {{
+                var clickHandler{salt} = (param) => {{
+                    if (!param.point) return;
+                    const time = {chart.id}.chart.timeScale().coordinateToTime(param.point.x)
+                    const price = {chart.id}.series.coordinateToPrice(param.point.y);
+                    window.callbackFunction(`subscribe_click{salt}_~_${{time}};;;${{price}}`)
+                }}
+                {chart.id}.chart.subscribeClick(clickHandler{salt})
             }}
-            {chart.id}.chart.subscribeClick(clickHandler{salt})
             '''),
             wrapper=lambda func, c, *args: func(c, *[float(a) if a != 'null' else None for a in args])
         )

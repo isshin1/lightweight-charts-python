@@ -72,7 +72,11 @@ class TwoPointDrawing(Drawing):
                 {options_string}
             }}
         )
-        {chart.id}.series.attachPrimitive({self.id})
+        if ({chart.id}.series && {chart.id}.series.attachPrimitive) {{
+            {chart.id}.series.attachPrimitive({self.id})
+        }} else {{
+            console.warn('[TwoPointDrawing] attachPrimitive missing for', {chart.id});
+        }}
         ''')
 
 
@@ -92,7 +96,11 @@ class HorizontalLine(Drawing):
             }},
             callbackName={f"'{self.id}'" if func else 'null'}
         )
-        {chart.id}.series.attachPrimitive({self.id})
+        if ({chart.id}.series && {chart.id}.series.attachPrimitive) {{
+            {chart.id}.series.attachPrimitive({self.id})
+        }} else {{
+            console.warn('[HorizontalLine] attachPrimitive missing for', {chart.id});
+        }}
         ''')
         if not func:
             return
@@ -138,7 +146,11 @@ class VerticalLine(Drawing):
             }},
             callbackName={f"'{self.id}'" if func else 'null'}
         )
-        {chart.id}.series.attachPrimitive({self.id})
+        if ({chart.id}.series && {chart.id}.series.attachPrimitive) {{
+            {chart.id}.series.attachPrimitive({self.id})
+        }} else {{
+            console.warn('[VerticalLine] attachPrimitive missing for', {chart.id});
+        }}
         ''')
 
     def update(self, time: TIME):
@@ -175,7 +187,11 @@ class RayLine(Drawing):
             }},
             callbackName={f"'{self.id}'" if func else 'null'}
         )
-        {chart.id}.series.attachPrimitive({self.id})
+        if ({chart.id}.series && {chart.id}.series.attachPrimitive) {{
+            {chart.id}.series.attachPrimitive({self.id})
+        }} else {{
+            console.warn('[RayLine] attachPrimitive missing for', {chart.id});
+        }}
         ''')
 
 
@@ -224,6 +240,8 @@ class TrendLine(TwoPointDrawing):
         line_color: str,
         width: int,
         style: LINE_STYLE,
+        text: str = '',
+        text_position: str = 'above',
         func=None):
 
         super().__init__(
@@ -237,7 +255,9 @@ class TrendLine(TwoPointDrawing):
             {
                 "lineColor": f'"{line_color}"',
                 "width": width,
-                "lineStyle": as_enum(style, LINE_STYLE)
+                "lineStyle": as_enum(style, LINE_STYLE),
+                "text": f'"{text}"',
+                "textPosition": f'"{text_position}"',
             },
             func
         )

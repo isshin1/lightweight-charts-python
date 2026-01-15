@@ -34,7 +34,18 @@ if QWebEngineView:
         from PyQt6.QtWebEngineCore import QWebEnginePage
         class ConsoleLoggingPage(QWebEnginePage):
              def javaScriptConsoleMessage(self, level, message, lineNumber, sourceID):
-                 print(f"[JS] {message} (Line {lineNumber})")
+                 if "Chart Created true" in message:
+                      pass
+                      
+                 # Map JS levels: 0=Info, 1=Warning, 2=Error
+                 if level == 0:
+                     logger.info(f"[JS] {message} (Line {lineNumber})")
+                 elif level == 1:
+                     logger.warning(f"[JS] {message} (Line {lineNumber})")
+                 elif level == 2:
+                     logger.error(f"[JS] {message} (Line {lineNumber})")
+                 else:
+                     logger.debug(f"[JS] {message} (Line {lineNumber})")
     except ImportError:
          pass
          
@@ -52,6 +63,9 @@ try:
 except ImportError:
     sthtml = None
 
+import logging
+logger = logging.getLogger("lightweight_charts")
+
 try:
     from IPython.display import HTML, display
     import warnings
@@ -61,8 +75,18 @@ except ImportError:
 
 
 def emit_callback(window, string):
-    func, args = parse_event_message(window, string)
-    asyncio.create_task(func(*args)) if asyncio.iscoroutinefunction(func) else func(*args)
+    try:
+        func, args = parse_event_message(window, string)
+        logger.debug(f"emit_callback: name={string.split('_~_')[0]}, args={args}")
+        asyncio.create_task(func(*args)) if asyncio.iscoroutinefunction(func) else func(*args)
+    except KeyError as e:
+        logger.error(f"emit_callback: Handler not found for key: {e}")
+        logger.error(f"  Message was: {string}")
+        logger.error(f"  Available handlers: {list(window.handlers.keys())}")
+    except Exception as e:
+        logger.error(f"emit_callback exception: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
 
 
 class WxChart(abstract.AbstractChart):
@@ -116,7 +140,7 @@ class QtChart(abstract.AbstractChart):
             document.head.appendChild(scriptElement)
 
         '''))
-        self.webview.loadFinished.connect(lambda: QTimer.singleShot(200, self.win.on_js_load))
+        self.webview.loadFinished.connect(lambda: QTimer.singleShot(2000, self.win.on_js_load))
         if using_pyside6:
             self.webview.setContextMenuPolicy(Qt.ContextMenuPolicy.NoContextMenu)
         self.webview.load(QUrl.fromLocalFile(abstract.INDEX))
@@ -131,7 +155,7 @@ class StaticLWC(abstract.AbstractChart):
 
         with open(abstract.INDEX.replace("index.html", 'styles.css'), 'r') as f:
             css = f.read()
-        with open(abstract.INDEX.replace("index.html", 'bundle.js'), 'r') as f:
+        with open(abstract.INDEX.replace("index.html", 'bundle_safe.js'), 'r') as f:
             js = f.read()
         with open(abstract.INDEX.replace("index.html", 'lightweight-charts.js'), 'r') as f:
             lwc = f.read()
@@ -189,7 +213,7 @@ class JupyterChart(StaticLWC):
             document.getElementById('container').style.width = '{self.width}px'
             document.getElementById('container').style.height = '100%'
             ''')
-        self.run_script(f'{self.id}.chart.resize({width}, {height})')
+        self.run_script(f'{self.id}.chart.resize({width * inner_width}, {height * inner_height})')
 
     def _load(self):
         if HTML is None:
