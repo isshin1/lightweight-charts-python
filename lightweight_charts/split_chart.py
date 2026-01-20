@@ -11,6 +11,8 @@ This class encapsulates all split chart functionality including:
 from typing import Callable, Optional
 import pandas as pd
 import logging
+import os
+from pathlib import Path
 
 logger = logging.getLogger("lightweight_charts")
 
@@ -26,6 +28,15 @@ except ImportError:
         from PySide6.QtGui import QColor
 
 from .widgets import QtChart
+
+# Load split resizer JS module content at import time
+_JS_DIR = Path(__file__).parent / 'js'
+_SPLIT_RESIZER_JS = ""
+try:
+    with open(_JS_DIR / 'split_resizer.js', 'r') as f:
+        _SPLIT_RESIZER_JS = f.read()
+except Exception as e:
+    logger.warning(f"[QtSplitChart] Could not load split_resizer.js: {e}")
 
 
 class QtSplitChart(QObject):
@@ -311,6 +322,9 @@ class QtSplitChart(QObject):
             } catch(e) { console.log("Global Script execution error: " + e); }
         """ % (chart0_id, chart0_id, chart0_id, chart0_id, chart1_id, chart0_id, chart1_id, chart0_id, chart0_id, chart0_id, chart0_id, chart0_id, chart0_id)
         
+        # Note: split_resizer.js is now loaded via index.html to ensure it's available
+        # before any Python-injected scripts run
+        
         self._main_chart.run_script(script)
         
         # [FIX] Apply the current view mode once handlers are injected
@@ -340,6 +354,7 @@ class QtSplitChart(QObject):
         
         # Determine visibility
         disp_sub = 'none' if mode == 'single' else 'block'
+        disp_divider = 'none' if mode == 'single' else 'block'
         
         self._main_chart.run_script(f"""
             (function() {{
@@ -378,6 +393,39 @@ class QtSplitChart(QObject):
                 c1.div.style.boxSizing = 'border-box';
                 c1.div.style.width = '100%';
                 c1.div.style.height = '100%';
+                
+                // Handle split resizer divider
+                if ('{mode}' === 'split') {{
+                    // Initialize or update resizer with retry logic
+                    function tryInitResizer(retries) {{
+                        if (typeof window.initSplitResizer === 'function') {{
+                            if (!window._splitResizer) {{
+                                console.log("[QtSplitChart {chart0_id}] Initializing split resizer");
+                                window._splitResizer = window.initSplitResizer(c0, c1, function(newRatio) {{
+                                    console.log("[QtSplitChart {chart0_id}] Ratio changed to:", newRatio);
+                                    if (window.pythonObject) {{
+                                        window.pythonObject.callback('on_split_ratio_~_' + newRatio.toFixed(4));
+                                    }}
+                                }});
+                            }} else {{
+                                // Update existing resizer ratio
+                                window._splitResizer.setRatio({self._split_ratio});
+                                window._splitResizer.show();
+                            }}
+                        }} else if (retries > 0) {{
+                            console.log("[QtSplitChart {chart0_id}] initSplitResizer not ready, retrying in 100ms...");
+                            setTimeout(function() {{ tryInitResizer(retries - 1); }}, 100);
+                        }} else {{
+                            console.log("[QtSplitChart {chart0_id}] initSplitResizer not available after retries");
+                        }}
+                    }}
+                    tryInitResizer(10);  // Retry up to 10 times (1 second total)
+                }} else {{
+                    // Hide resizer in single mode
+                    if (window._splitResizer) {{
+                        window._splitResizer.hide();
+                    }}
+                }}
             }})();
         """)
         
@@ -431,13 +479,20 @@ class QtSplitChart(QObject):
             logger.error(f"[QtSplitChart] Invalid index: {index_str}")
             
     def _on_ratio_changed(self, ratio_str: str):
-        """Handler called from JS when split ratio changes."""
+        """Handler called from JS when split ratio changes via drag."""
         try:
             ratio = float(ratio_str)
+            logger.debug(f"[QtSplitChart] Ratio changed to {ratio}")
             self._split_ratio = ratio
+            
+            # Update internal scale factors for the library's autosize logic
+            if self._current_view_mode == 'split':
+                self._main_chart.resize(ratio, 1.0)
+                self._sub_chart.resize(1.0 - ratio, 1.0)
+            
             self.ratio_changed.emit(ratio)
-        except ValueError:
-            pass
+        except ValueError as e:
+            logger.error(f"[QtSplitChart] Invalid ratio value: {ratio_str}, error: {e}")
             
     def _update_active_border(self):
         """Update the visual border to show which chart is active."""

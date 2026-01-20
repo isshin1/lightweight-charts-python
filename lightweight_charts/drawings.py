@@ -242,6 +242,7 @@ class TrendLine(TwoPointDrawing):
         style: LINE_STYLE,
         text: str = '',
         text_position: str = 'above',
+        label_pos: float = 0.5,
         func=None):
 
         super().__init__(
@@ -258,6 +259,7 @@ class TrendLine(TwoPointDrawing):
                 "lineStyle": as_enum(style, LINE_STYLE),
                 "text": f'"{text}"',
                 "textPosition": f'"{text_position}"',
+                "labelPos": label_pos,
             },
             func
         )

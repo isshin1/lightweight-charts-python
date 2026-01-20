@@ -280,7 +280,13 @@ class SeriesCommon(Pane):
                 arg = pd.to_datetime(arg, unit='ms')
             except ValueError:
                 arg = pd.to_datetime(arg)
-        arg = self._interval * (arg.timestamp() // self._interval)+self.offset
+        
+        # [FIX] If _interval is unset (default 1) or invalid, skip rounding
+        # This prevents incorrect timestamp bucketing for charts that haven't loaded data
+        if self._interval <= 1:
+            return arg.timestamp()
+        
+        arg = self._interval * (arg.timestamp() // self._interval) + self.offset
         return arg
 
     def set(self, df: Optional[pd.DataFrame] = None, format_cols: bool = True):
@@ -411,6 +417,7 @@ class SeriesCommon(Pane):
         style: LINE_STYLE = 'solid',
         text: str = '',
         text_position: str = 'above',
+        label_pos: float = 0.5,
     ) -> TwoPointDrawing:
         return TrendLine(*locals().values())
 

@@ -335,48 +335,40 @@ body {
 	border-color: var(--active-bg-color);
 }
 
-.alert-plus-button {
+/* Split Chart Divider */
+.split-divider {
 	position: absolute;
-	z-index: 2000;
-	width: 28px;
-	/* Increased slightly to match label */
-	height: 28px;
-	background-color: rgb(55, 55, 55);
-	color: white;
-	border-radius: 4px;
-	/* Rounded corners like reference */
-	display: none;
-	align-items: center;
-	justify-content: center;
-	cursor: pointer;
-	font-weight: bold;
-	font-size: 16px;
-	line-height: 1;
-	pointer-events: auto;
-	/* We will set right/top dynamically or fixed relative to right edge */
-	right: 0px;
-	transform: translateY(-50%);
+	top: 0;
+	bottom: 0;
+	width: 6px;
+	cursor: col-resize;
+	background-color: transparent;
+	z-index: 2001;
+	transition: background-color 0.15s ease;
 }
 
-.alert-plus-button:hover {
-	background-color: #f57c00;
+.split-divider:hover {
+	background-color: rgba(0, 122, 255, 0.5);
 }
 
-.alert-delete-button {
-	width: 20px;
-	height: 20px;
-	background-color: #d32f2f;
-	border-radius: 4px;
-	display: none;
-	/* Changed via JS */
-	align-items: center;
-	justify-content: center;
-	color: white;
-	box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
-	transition: background-color 0.2s;
-	z-index: 1000;
+.split-divider.dragging {
+	background-color: rgba(0, 122, 255, 0.7);
 }
 
-.alert-delete-button:hover {
-	background-color: #b71c1c;
+.split-divider-grip {
+	position: absolute;
+	left: 50%;
+	top: 50%;
+	transform: translate(-50%, -50%);
+	width: 4px;
+	height: 40px;
+	background-color: var(--border-color);
+	border-radius: 2px;
+	pointer-events: none;
+	transition: background-color 0.15s ease;
+}
+
+.split-divider:hover .split-divider-grip,
+.split-divider.dragging .split-divider-grip {
+	background-color: var(--active-bg-color);
 }
