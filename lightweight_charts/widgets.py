@@ -159,12 +159,21 @@ class StaticLWC(abstract.AbstractChart):
             js = f.read()
         with open(abstract.INDEX.replace("index.html", 'lightweight-charts.js'), 'r') as f:
             lwc = f.read()
+        
+        # Load chart stabilizer module
+        stabilizer_path = abstract.INDEX.replace("index.html", 'chart_stabilizer.js')
+        try:
+            with open(stabilizer_path, 'r') as f:
+                stabilizer_js = f.read()
+        except FileNotFoundError:
+            stabilizer_js = ""  # If not found, skip
 
         with open(abstract.INDEX, 'r') as f:
             self._html = f.read() \
                 .replace('<link rel="stylesheet" href="styles.css">', f"<style>{css}</style>") \
                 .replace(' src="./lightweight-charts.js">', f'>{lwc}') \
-                .replace(' src="./bundle.js">', f'>{js}') \
+                .replace(' src="./chart_stabilizer.js">', f'>{stabilizer_js}') \
+                .replace(' src="./bundle_safe.js">', f'>{js}') \
                 .replace('</body>\n</html>', '<script>')
 
         super().__init__(abstract.Window(run_script=self.run_script), inner_width, inner_height,

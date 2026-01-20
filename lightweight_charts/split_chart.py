@@ -339,6 +339,10 @@ class QtSplitChart(QObject):
         
         Note: We use resize(width, height) to update the internal scale factors
         so that the library's autosize logic works correctly on window resize.
+        
+        IMPORTANT: This method is designed to be non-blocking. The main chart
+        layout is applied immediately, while sub-chart and resizer initialization
+        are deferred to keep the original chart accessible during transition.
         """
         # Track current mode for persistence
         self._current_view_mode = mode
@@ -354,90 +358,112 @@ class QtSplitChart(QObject):
         
         # Determine visibility
         disp_sub = 'none' if mode == 'single' else 'block'
-        disp_divider = 'none' if mode == 'single' else 'block'
         
+        # PHASE 1: Apply MAIN CHART layout immediately (non-blocking for original chart)
+        # This ensures the main chart remains accessible while split view initializes
         self._main_chart.run_script(f"""
             (function() {{
-                console.log("[QtSplitChart {chart0_id}] set_view_mode called. Mode: {mode}, Ratio: {self._split_ratio}");
+                console.log("[QtSplitChart {chart0_id}] set_view_mode PHASE 1 - Main chart layout. Mode: {mode}");
                 var c0 = {chart0_id};
-                var c1 = {chart1_id};
                 
-                if (!c0 || !c1) {{
-                    console.log("[QtSplitChart {chart0_id}] set_view_mode ERROR: c0 or c1 missing");
+                if (!c0) {{
+                    console.log("[QtSplitChart {chart0_id}] set_view_mode ERROR: c0 missing");
                     return;
                 }}
                 
-                // MAIN CHART (Left)
+                // MAIN CHART (Left) - Apply immediately
                 c0.wrapper.style.position = 'absolute';
                 c0.wrapper.style.left = '0';
                 c0.wrapper.style.top = '0';
                 c0.wrapper.style.width = '{width_main * 100}%';
                 c0.wrapper.style.height = '100%';
-                c0.wrapper.style.boxSizing = 'border-box'; // Ensure border is included in width
+                c0.wrapper.style.boxSizing = 'border-box';
                 
                 // Reset inner div to fill wrapper
                 c0.div.style.boxSizing = 'border-box';
                 c0.div.style.width = '100%'; 
                 c0.div.style.height = '100%';
-
-                // SUB CHART (Right or Hidden)
-                c1.wrapper.style.display = '{disp_sub}';
-                c1.wrapper.style.position = 'absolute';
-                c1.wrapper.style.left = '{width_main * 100}%';
-                c1.wrapper.style.top = '0';
-                c1.wrapper.style.width = '{width_sub * 100}%';
-                c1.wrapper.style.height = '100%';
-                c1.wrapper.style.boxSizing = 'border-box'; // Ensure border is included in width
-                
-                // Reset inner div to fill wrapper
-                c1.div.style.boxSizing = 'border-box';
-                c1.div.style.width = '100%';
-                c1.div.style.height = '100%';
-                
-                // Handle split resizer divider
-                if ('{mode}' === 'split') {{
-                    // Initialize or update resizer with retry logic
-                    function tryInitResizer(retries) {{
-                        if (typeof window.initSplitResizer === 'function') {{
-                            if (!window._splitResizer) {{
-                                console.log("[QtSplitChart {chart0_id}] Initializing split resizer");
-                                window._splitResizer = window.initSplitResizer(c0, c1, function(newRatio) {{
-                                    console.log("[QtSplitChart {chart0_id}] Ratio changed to:", newRatio);
-                                    if (window.pythonObject) {{
-                                        window.pythonObject.callback('on_split_ratio_~_' + newRatio.toFixed(4));
-                                    }}
-                                }});
-                            }} else {{
-                                // Update existing resizer ratio
-                                window._splitResizer.setRatio({self._split_ratio});
-                                window._splitResizer.show();
-                            }}
-                        }} else if (retries > 0) {{
-                            console.log("[QtSplitChart {chart0_id}] initSplitResizer not ready, retrying in 100ms...");
-                            setTimeout(function() {{ tryInitResizer(retries - 1); }}, 100);
-                        }} else {{
-                            console.log("[QtSplitChart {chart0_id}] initSplitResizer not available after retries");
-                        }}
-                    }}
-                    tryInitResizer(10);  // Retry up to 10 times (1 second total)
-                }} else {{
-                    // Hide resizer in single mode
-                    if (window._splitResizer) {{
-                        window._splitResizer.hide();
-                    }}
-                }}
             }})();
         """)
         
-        # 2. Update Internal Scale Factors using resize()
+        # Update main chart internal scale immediately
         self._main_chart.resize(width_main, 1.0)
-        self._sub_chart.resize(width_sub, 1.0)
         
-        # Apply initial active border
-        self._update_active_border()
+        # PHASE 2: Defer sub-chart layout, resizer init, and other operations
+        # This allows the main chart to remain responsive during split transition
+        def _deferred_split_init():
+            self._main_chart.run_script(f"""
+                (function() {{
+                    console.log("[QtSplitChart {chart0_id}] set_view_mode PHASE 2 - Sub chart layout");
+                    var c0 = {chart0_id};
+                    var c1 = {chart1_id};
+                    
+                    if (!c0 || !c1) {{
+                        console.log("[QtSplitChart {chart0_id}] set_view_mode PHASE 2 ERROR: charts missing");
+                        return;
+                    }}
+                    
+                    // SUB CHART (Right or Hidden)
+                    c1.wrapper.style.display = '{disp_sub}';
+                    c1.wrapper.style.position = 'absolute';
+                    c1.wrapper.style.left = '{width_main * 100}%';
+                    c1.wrapper.style.top = '0';
+                    c1.wrapper.style.width = '{width_sub * 100}%';
+                    c1.wrapper.style.height = '100%';
+                    c1.wrapper.style.boxSizing = 'border-box';
+                    
+                    // Reset inner div to fill wrapper
+                    c1.div.style.boxSizing = 'border-box';
+                    c1.div.style.width = '100%';
+                    c1.div.style.height = '100%';
+                    
+                    // Handle split resizer divider
+                    if ('{mode}' === 'split') {{
+                        // Initialize or update resizer with retry logic
+                        function tryInitResizer(retries) {{
+                            if (typeof window.initSplitResizer === 'function') {{
+                                if (!window._splitResizer) {{
+                                    console.log("[QtSplitChart {chart0_id}] Initializing split resizer");
+                                    window._splitResizer = window.initSplitResizer(c0, c1, function(newRatio) {{
+                                        console.log("[QtSplitChart {chart0_id}] Ratio changed to:", newRatio);
+                                        if (window.pythonObject) {{
+                                            window.pythonObject.callback('on_split_ratio_~_' + newRatio.toFixed(4));
+                                        }}
+                                    }});
+                                }} else {{
+                                    // Update existing resizer ratio
+                                    window._splitResizer.setRatio({self._split_ratio});
+                                    window._splitResizer.show();
+                                }}
+                            }} else if (retries > 0) {{
+                                console.log("[QtSplitChart {chart0_id}] initSplitResizer not ready, retrying in 100ms...");
+                                setTimeout(function() {{ tryInitResizer(retries - 1); }}, 100);
+                            }} else {{
+                                console.log("[QtSplitChart {chart0_id}] initSplitResizer not available after retries");
+                            }}
+                        }}
+                        tryInitResizer(10);  // Retry up to 10 times (1 second total)
+                    }} else {{
+                        // Hide resizer in single mode
+                        if (window._splitResizer) {{
+                            window._splitResizer.hide();
+                        }}
+                    }}
+                }})();
+            """)
+            
+            # Update sub-chart internal scale
+            self._sub_chart.resize(width_sub, 1.0)
+            
+            # Apply active border
+            self._update_active_border()
+            
+            # Notify that the split chart is fully ready
+            self.ready.emit()
         
-        # Notify that the split chart is fully ready
-        self.ready.emit()
+        # Defer phase 2 to next event loop iteration (0ms timeout)
+        # This allows the main chart to paint and become interactive first
+        QTimer.singleShot(0, _deferred_split_init)
         
 
         

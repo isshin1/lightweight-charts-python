@@ -652,6 +652,7 @@ var Lib = function (t, e) {
     _seriesList = [];
     alertPlugin; // Add field
     orderPlugin; // Add field
+    stabilizer; // ChartStabilizer for preventing shifting on data load
 
     constructor(t, e, i, s, o) {
       this.reSize = this.reSize.bind(this);
@@ -674,6 +675,14 @@ var Lib = function (t, e) {
       console.log('Chart Created', this.chart != null);
       this.series = this.createCandlestickSeries();
       console.log('Series Created', this.series != null);
+
+      // Initialize Chart Stabilizer to prevent shifting on data load
+      try {
+        if (window.createChartStabilizer) {
+          this.stabilizer = window.createChartStabilizer(this);
+          console.log('ChartStabilizer Created');
+        }
+      } catch (stabErr) { console.warn('ChartStabilizer init:', stabErr); }
       try {
         this.volumeSeries = this.createVolumeSeries();
         console.log('Volume Series Created');
