@@ -176,6 +176,8 @@ class QtSplitChart(QObject):
             horz_color='#ffffff50'
         )
         chart.legend(visible=True, font_size=14)
+        # Fix horizontal jitter by enforcing minimum price scale width
+        chart.price_scale(minimum_width=75)
         
     def _on_load_finished(self, ok: bool):
         """Called when the webview finishes loading."""

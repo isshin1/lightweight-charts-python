@@ -133,7 +133,11 @@
     _manualFitPriceRange() {
       try {
         const priceScale = this.series?.priceScale();
+        const timeScale = this.chart.timeScale();
         if (!priceScale) return;
+
+        // SAVE current time range to restore later (prevents horizontal shift)
+        const savedTimeRange = timeScale.getVisibleLogicalRange();
 
         // Get current data
         const data = this.series.data?.() || [];
@@ -142,17 +146,15 @@
           return;
         }
 
-        // Calculate min/max from visible data
-        const timeScale = this.chart.timeScale();
+        // Get visible range, but DON'T call fitContent if missing
+        // The set() method in abstract.py handles initial range setting
         const visibleRange = timeScale.getVisibleLogicalRange();
-
         if (!visibleRange) {
-          log('No visible range, fitting content first');
-          timeScale.fitContent();
-          return;
+          log('No visible range, skipping stabilization (set() will handle)');
+          return;  // DON'T call fitContent() - this causes horizontal shift
         }
 
-        // Get visible bars
+        // Get visible bars and calculate min/max
         let minPrice = Infinity;
         let maxPrice = -Infinity;
 
@@ -167,24 +169,26 @@
         }
 
         if (minPrice !== Infinity && maxPrice !== -Infinity) {
-          // Add padding (similar to autoScale margins)
           const range = maxPrice - minPrice;
-          const padding = range * 0.1; // 10% padding
-
-          // Set manual price range - keep autoScale disabled
-          // This avoids the margin recalculation loop
+          const padding = range * 0.1;
           log('Manual fit: price range', minPrice - padding, 'to', maxPrice + padding);
 
-          // Note: There's no direct setPriceRange, but we can use scaleMargins
-          // For now, just enable autoScale briefly then disable
-          priceScale.applyOptions({ autoScale: true });
+          // INSTEAD OF toggling autoScale (which causes vertical shift),
+          // just keep it disabled. The scaleMargins already provide proper fitting.
+          // The pre-disable in _hookIntoSeries is sufficient.
+          log('Manual fit complete - autoScale kept disabled (no toggle)');
+        }
 
-          // Use requestAnimationFrame to let it settle
+        // RESTORE time range if it changed (prevents any horizontal drift)
+        if (savedTimeRange) {
           requestAnimationFrame(() => {
-            requestAnimationFrame(() => {
-              priceScale.applyOptions({ autoScale: false });
-              log('Manual fit complete - autoScale disabled');
-            });
+            const currentRange = timeScale.getVisibleLogicalRange();
+            if (currentRange &&
+              (Math.abs(currentRange.from - savedTimeRange.from) > 0.01 ||
+                Math.abs(currentRange.to - savedTimeRange.to) > 0.01)) {
+              timeScale.setVisibleLogicalRange(savedTimeRange);
+              log('Restored time range after stabilization');
+            }
           });
         }
       } catch (e) {
