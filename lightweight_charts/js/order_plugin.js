@@ -34,29 +34,33 @@ class OrderPlugin {
     requestAnimationFrame(this._renderLoop);
   }
 
-  addOrder(id, price, title, color, textColor, axisLabelVisible, draggable, zIndex, entryPrice) {
+  addOrder(id, price, title, color, textColor, axisLabelVisible, draggable, zIndex, entryPrice, dashed) {
     if (this.orders.has(id)) this.removeOrder(id);
 
     // Default draggable to true if undefined
     if (draggable === undefined) draggable = true;
     // Default zIndex: Entry lines use lower value (10), regular orders use 20
     if (zIndex === undefined) zIndex = 20;
+    // Default dashed to false (solid line for real orders)
+    if (dashed === undefined) dashed = false;
 
     if (!this.handler || !this.handler.series) {
       console.warn('OrderPlugin: Handler or series not waiting, retrying order add...', id);
-      setTimeout(() => this.addOrder(id, price, title, color, textColor, axisLabelVisible, draggable, zIndex), 100);
+      setTimeout(() => this.addOrder(id, price, title, color, textColor, axisLabelVisible, draggable, zIndex, entryPrice, dashed), 100);
       return;
     }
 
     // 1. Create PriceLine (Title empty so only price shows on axis - unless hidden)
+    // lineStyle: 0 = Solid, 1 = Dotted, 2 = Dashed, 3 = Large Dashed, 4 = Sparse Dotted
     const line = this.handler.series.createPriceLine({
       price: price,
       color: color || '#2196F3',
-      lineWidth: 2,
-      lineStyle: 1,
+      lineWidth: dashed ? 1 : 2,  // Thinner line for fake orders
+      lineStyle: dashed ? 2 : 0,  // 2 = Dashed, 0 = Solid
       axisLabelVisible: axisLabelVisible !== false, // Default true
       title: '',
     });
+
 
     // 2. Create Custom Label
     const label = document.createElement('div');
@@ -76,6 +80,9 @@ class OrderPlugin {
     label.style.alignItems = 'center';
     label.style.boxShadow = '0 2px 4px rgba(0,0,0,0.2)';
     label.style.userSelect = 'none';
+    // Reduced opacity for fake orders (dashed lines)
+    label.style.opacity = dashed ? '0.6' : '1';
+
 
     // Close Button (Using text character ✕)
     const closeBtn = document.createElement('span');

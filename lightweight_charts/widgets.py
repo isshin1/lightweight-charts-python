@@ -168,12 +168,21 @@ class StaticLWC(abstract.AbstractChart):
         except FileNotFoundError:
             stabilizer_js = ""  # If not found, skip
 
+        # Load arrow marker module
+        arrow_marker_path = abstract.INDEX.replace("index.html", 'arrow_marker.js')
+        try:
+            with open(arrow_marker_path, 'r') as f:
+                arrow_marker_js = f.read()
+        except FileNotFoundError:
+            arrow_marker_js = ""  # If not found, skip
+
         with open(abstract.INDEX, 'r') as f:
             self._html = f.read() \
                 .replace('<link rel="stylesheet" href="styles.css">', f"<style>{css}</style>") \
                 .replace(' src="./lightweight-charts.js">', f'>{lwc}') \
                 .replace(' src="./chart_stabilizer.js">', f'>{stabilizer_js}') \
                 .replace(' src="./bundle_safe.js">', f'>{js}') \
+                .replace(' src="./arrow_marker.js">', f'>{arrow_marker_js}') \
                 .replace('</body>\n</html>', '<script>')
 
         super().__init__(abstract.Window(run_script=self.run_script), inner_width, inner_height,

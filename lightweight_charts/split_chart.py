@@ -68,13 +68,13 @@ class QtSplitChart(QObject):
         self, 
         parent=None, 
         toolbox: bool = True, 
-        split_ratio: float = 0.5,
+        split_ratio: float = 0.6,
         background_color: str = "#1e1e1e",
         active_border_color: str = "#3498db",
         active_border_width: int = 2,
         enable_focus_tracking: bool = True
     ):
-        """
+        """split_ratio
         Initialize a split chart with two synchronized charts.
         
         Args:
@@ -380,11 +380,15 @@ class QtSplitChart(QObject):
                 c0.wrapper.style.width = '{width_main * 100}%';
                 c0.wrapper.style.height = '100%';
                 c0.wrapper.style.boxSizing = 'border-box';
+                c0.wrapper.style.padding = '0';
+                c0.wrapper.style.margin = '0';
                 
                 // Reset inner div to fill wrapper
                 c0.div.style.boxSizing = 'border-box';
                 c0.div.style.width = '100%'; 
                 c0.div.style.height = '100%';
+                c0.div.style.padding = '0';
+                c0.div.style.margin = '0';
             }})();
         """)
         
@@ -413,11 +417,15 @@ class QtSplitChart(QObject):
                     c1.wrapper.style.width = '{width_sub * 100}%';
                     c1.wrapper.style.height = '100%';
                     c1.wrapper.style.boxSizing = 'border-box';
+                    c1.wrapper.style.padding = '0';
+                    c1.wrapper.style.margin = '0';
                     
                     // Reset inner div to fill wrapper
                     c1.div.style.boxSizing = 'border-box';
                     c1.div.style.width = '100%';
                     c1.div.style.height = '100%';
+                    c1.div.style.padding = '0';
+                    c1.div.style.margin = '0';
                     
                     // Handle split resizer divider
                     if ('{mode}' === 'split') {{
@@ -533,7 +541,11 @@ class QtSplitChart(QObject):
         border_style = f"{self._active_border_width}px solid {self._active_border_color}"
         no_border = "none"
         
-        if self._active_index == 0:
+        # In single mode, don't show any border (no need to distinguish focus)
+        # In split mode, show blue border on focused chart only
+        if self._current_view_mode == 'single':
+            border0, border1 = no_border, no_border
+        elif self._active_index == 0:
             border0, border1 = border_style, no_border
         else:
             border0, border1 = no_border, border_style
