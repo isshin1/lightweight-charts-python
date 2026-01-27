@@ -24,8 +24,9 @@ if [[ $? -ne 0 ]]; then
 fi
 
 cp dist/bundle.js src/general/styles.css lightweight_charts/js
+cp dist/bundle.js lightweight_charts/js/bundle_safe.js
 if [[ $? -eq 0 ]]; then
-    echo -e "${INFO}copied bundle.js, style.css into python package"
+    echo -e "${INFO}copied bundle.js, bundle_safe.js, style.css into python package"
 else
     echo -e "${ERROR}could not copy dist into python package ?"
     exit 1

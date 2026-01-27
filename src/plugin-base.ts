@@ -40,6 +40,10 @@ export abstract class PluginBase implements ISeriesPrimitive<Time> {
 		this._requestUpdate = undefined;
 	}
 
+	public get isAttached(): boolean {
+		return this._chart !== undefined && this._series !== undefined;
+	}
+
 	public get chart(): IChartApi {
 		return ensureDefined(this._chart);
 	}

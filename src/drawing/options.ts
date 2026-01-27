@@ -14,5 +14,5 @@ export interface DrawingOptions {
 export const defaultOptions: DrawingOptions = {
     lineColor: '#000000',  // Black for visibility on white backgrounds
     lineStyle: LineStyle.Solid,
-    width: 2,  // Thinner lines (was 4)
+    width: 1,  // Default 1px line width
 };

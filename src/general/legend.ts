@@ -72,6 +72,11 @@ export class Legend {
     // }
 
     makeSeriesRow(name: string, series: ISeriesApi<SeriesType>) {
+        // Skip creating legend row for series without names (e.g., invisible helper series)
+        if (!name || name.trim() === '') {
+            return;
+        }
+
         const strokeColor = '#333';
         let openEye = `
     <path style="fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;stroke:${strokeColor};stroke-opacity:1;stroke-miterlimit:4;" d="M 21.998437 12 C 21.998437 12 18.998437 18 12 18 C 5.001562 18 2.001562 12 2.001562 12 C 2.001562 12 5.001562 6 12 6 C 18.998437 6 21.998437 12 21.998437 12 Z M 21.998437 12 " transform="matrix(0.833333,0,0,0.833333,0,0)"/>
@@ -120,14 +125,43 @@ export class Legend {
         this.seriesContainer.appendChild(row)
 
         const color = series.options().color;
+        const solid = color.startsWith('rgba') ? color.replace(/[^,]+(?=\))/, '1') : color;
+
+        // Set initial content immediately so indicator name shows without waiting for crosshair
+        div.innerHTML = `<span style="color: ${solid};">▨</span>    ${name} : --`;
+
         this._lines.push({
             name: name,
             div: div,
             row: row,
             toggle: toggle,
             series: series,
-            solid: color.startsWith('rgba') ? color.replace(/[^,]+(?=\))/, '1') : color
+            solid: solid
         });
+    }
+
+    /**
+     * Update the legend toggle icon to match series visibility state.
+     * Called from Python when hide_data()/show_data() is used.
+     */
+    updateSeriesVisibility(name: string) {
+        const line = this._lines.find(l => l.name === name);
+        if (!line) return;
+
+        const isVisible = line.series.options().visible;
+        const group = line.toggle.querySelector('g');
+        if (!group) return;
+
+        const strokeColor = '#333';
+        const openEye = `
+    <path style="fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;stroke:${strokeColor};stroke-opacity:1;stroke-miterlimit:4;" d="M 21.998437 12 C 21.998437 12 18.998437 18 12 18 C 5.001562 18 2.001562 12 2.001562 12 C 2.001562 12 5.001562 6 12 6 C 18.998437 6 21.998437 12 21.998437 12 Z M 21.998437 12 " transform="matrix(0.833333,0,0,0.833333,0,0)"/>
+    <path style="fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;stroke:${strokeColor};stroke-opacity:1;stroke-miterlimit:4;" d="M 15 12 C 15 13.654687 13.654687 15 12 15 C 10.345312 15 9 13.654687 9 12 C 9 10.345312 10.345312 9 12 9 C 13.654687 9 15 10.345312 15 12 Z M 15 12 " transform="matrix(0.833333,0,0,0.833333,0,0)"/>\`
+    `;
+        const closedEye = `
+    <path style="fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;stroke:${strokeColor};stroke-opacity:1;stroke-miterlimit:4;" d="M 20.001562 9 C 20.001562 9 19.678125 9.665625 18.998437 10.514062 M 12 14.001562 C 10.392187 14.001562 9.046875 13.589062 7.95 12.998437 M 12 14.001562 C 13.607812 14.001562 14.953125 13.589062 16.05 12.998437 M 12 14.001562 L 12 17.498437 M 3.998437 9 C 3.998437 9 4.354687 9.735937 5.104687 10.645312 M 7.95 12.998437 L 5.001562 15.998437 M 7.95 12.998437 C 6.689062 12.328125 5.751562 11.423437 5.104687 10.645312 M 16.05 12.998437 L 18.501562 15.998437 M 16.05 12.998437 C 17.38125 12.290625 18.351562 11.320312 18.998437 10.514062 M 5.104687 10.645312 L 2.001562 12 M 18.998437 10.514062 L 21.998437 12 " transform="matrix(0.833333,0,0,0.833333,0,0)"/>
+    `;
+
+        group.innerHTML = isVisible ? openEye : closedEye;
     }
 
     legendItemFormat(num: number, decimal: number) { return num.toFixed(decimal).toString().padStart(8, ' ') }
@@ -211,6 +245,12 @@ export class Legend {
             }
             e.row.style.display = 'flex'
 
+            // Skip display if series has no name (e.g., helper/invisible series)
+            if (!e.name || e.name.trim() === '') {
+                e.row.style.display = 'none';
+                return;
+            }
+
             let data
             if (usingPoint && logical) {
                 data = e.series.dataByIndex(logical) as LineData
@@ -218,7 +258,30 @@ export class Legend {
             else {
                 data = param.seriesData.get(e.series) as LineData
             }
+
+            // If no data at crosshair position, fall back to latest data point
+            if (!data?.value) {
+                try {
+                    // Get the last data point from the series
+                    const lastIndex = this.handler.chart.timeScale().getVisibleLogicalRange();
+                    if (lastIndex) {
+                        // Try to get last known data by searching backwards from visible range end
+                        for (let i = 0; i < 100; i++) {
+                            const idx = Math.floor(lastIndex.to - i) as Logical;
+                            const d = e.series.dataByIndex(idx) as LineData;
+                            if (d?.value) {
+                                data = d;
+                                break;
+                            }
+                        }
+                    }
+                } catch (e) {
+                    // Silently ignore errors getting fallback data
+                }
+            }
+
             if (!data?.value) return;
+
             let price;
             if (e.series.seriesType() == 'Histogram') {
                 price = this.shorthandFormat(data.value)

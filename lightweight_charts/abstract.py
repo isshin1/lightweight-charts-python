@@ -659,11 +659,17 @@ class Candlestick(SeriesCommon):
 
         # self.run_script(f'{self.id}.makeCandlestickSeries()')
 
-    def set(self, df: Optional[pd.DataFrame] = None, keep_drawings=False):
+    def set(self, df: Optional[pd.DataFrame] = None, keep_drawings=False, chart_state: dict = None):
         """
         Sets the initial data for the chart.\n
         :param df: columns: date/time, open, high, low, close, volume (if volume enabled).
         :param keep_drawings: keeps any drawings made through the toolbox. Otherwise, they will be deleted.
+        :param chart_state: Optional dict with chart state to restore. Keys:
+            - barSpacing: float - horizontal zoom level
+            - scrollPosition: float - horizontal scroll position  
+            - autoScale: bool - whether price scale auto-scales
+            - mode: int - price scale mode (0=normal, 1=log, 2=percentage, 3=indexed)
+            When provided, applies this state atomically to prevent flicker.
         """
         if df is None or df.empty:
             self.run_script(f'{self.id}.series.setData([])')
@@ -678,73 +684,136 @@ class Candlestick(SeriesCommon):
         
         self.candle_data = df.copy()
         self._last_bar = df.iloc[-1]
-        self.run_script(f'{self.id}.series.setData({js_data(df)})')
-
-        if 'volume' in df:
-            volume = df.drop(columns=['open', 'high', 'low', 'close']).rename(columns={'volume': 'value'})
-            volume['color'] = self._volume_down_color
-            volume.loc[df['close'] > df['open'], 'color'] = self._volume_up_color
-            self.run_script(f'{self.id}.volumeSeries.setData({js_data(volume)})')
-
-        for line in self._lines:
-            if line.name not in df.columns:
-                continue
-            line.set(df[['time', line.name]], format_cols=False)
-        # set autoScale to true in case the user has dragged the price scale
-        self.run_script(f'''
-            if (!{self.id}.chart.priceScale("right").options.autoScale)
-                {self.id}.chart.priceScale("right").applyOptions({{autoScale: true}})
-        ''')
         
-        # [NEW] Force visible range to last 300 bars (using Timestamps)
-        data_len = len(df)
-        if data_len > 0:
-            start_idx = max(0, data_len - 300)
+        # If chart_state provided, apply everything atomically in one JS call
+        if chart_state:
+            bar_spacing = chart_state.get('barSpacing')
+            scroll_position = chart_state.get('scrollPosition')
+            auto_scale = chart_state.get('autoScale', True)
+            mode = chart_state.get('mode', 0)
+            price_range_top = chart_state.get('priceRangeTop')
+            price_range_bottom = chart_state.get('priceRangeBottom')
             
-            # Ensure integer timestamps for JS safety
-            from_time = int(df.iloc[start_idx]['time'])
-            last_time = int(df.iloc[-1]['time'])
+            # Build atomic JS that:
+            # 1. Pre-applies priceScale options
+            # 2. Pre-applies timeScale options (barSpacing)
+            # 3. Sets data
+            # 4. Applies scrollPosition (needs data to exist)
+            # 5. Applies setPriceRange if we have vertical position data
+            # All in one execution to prevent intermediate renders
             
-            # Use self._interval which was calculated from the MODE (most common interval)
-            # in _set_interval(). This is more reliable than averaging visible bars,
-            # which can be inflated by overnight/weekend gaps.
-            # Fallback: If _interval seems unreasonable, use 300 seconds (5 min).
-            bar_interval = self._interval if 0 < self._interval <= 86400 else 300
-                
-            # Add 20 bars of empty space to the right
-            margin_seconds = 20 * bar_interval
-            
-            # Sanity check: Cap margin at 7 days (604800 seconds) to prevent future date bugs
-            margin_seconds = min(margin_seconds, 604800)
-            
-            to_time = int(last_time + margin_seconds)
-            
-            # Enhanced debug with human-readable dates
-            from datetime import datetime as dt
-            from_dt = dt.fromtimestamp(from_time).strftime('%Y-%m-%d %H:%M')
-            last_dt = dt.fromtimestamp(last_time).strftime('%Y-%m-%d %H:%M')
-            to_dt = dt.fromtimestamp(to_time).strftime('%Y-%m-%d %H:%M')
-            logger.debug(f"DEBUG: Set Range - Len: {data_len}, Interval: {bar_interval}s")
-            logger.debug(f"DEBUG:   From: {from_time} ({from_dt})")
-            logger.debug(f"DEBUG:   Last: {last_time} ({last_dt})")
-            logger.debug(f"DEBUG:   To:   {to_time} ({to_dt})")
-            
-            # Use setTimeout with a delay to ensure data is fully processed before setting range
-            self.run_script(f'''
-                setTimeout(() => {{
-                    try {{
-                        const ts = {self._chart.id}.chart.timeScale();
-                        ts.setVisibleRange({{ from: {from_time}, to: {to_time} }});
-                        console.log("SetVisibleRange applied: from={from_time}, to={to_time}");
-                    }} catch (e) {{
-                        console.error("SetVisibleRange Error:", e);
-                        // Fallback: just fit content
-                        {self._chart.id}.chart.timeScale().fitContent();
+            restore_js = f'''
+                (function() {{
+                    var chartHeight = {self.id}.chart.chartElement().clientHeight;
+                    function logVertical(step) {{
+                        try {{
+                            var top = {self.id}.series.coordinateToPrice(0);
+                            var bottom = {self.id}.series.coordinateToPrice(chartHeight);
+                            console.log('[Restore ' + step + '] vertical: top=' + top + ' bottom=' + bottom);
+                        }} catch(e) {{ console.log('[Restore ' + step + '] No vertical data yet'); }}
                     }}
-                }}, 50);
-            ''')
+                    
+                    logVertical('0-Before');
+                    
+                    // NOTE: Do NOT call priceScale.applyOptions() here!
+                    // ANY call to applyOptions() triggers a vertical recalculation
+                    // The vertical position will be set by setPriceRange after all data loads
+            '''
+            
+            if bar_spacing:
+                restore_js += f'''
+                    // 2. Pre-apply time scale (horizontal) zoom
+                    {self.id}.chart.timeScale().applyOptions({{
+                        barSpacing: {bar_spacing}
+                    }});
+                    logVertical('2-AfterBarSpacing');
+                '''
+            
+            restore_js += f'''
+                    // 3. Set the data
+                    {self.id}.series.setData({js_data(df)});
+                    logVertical('3-AfterSetData');
+            '''
+            
+            if 'volume' in df:
+                volume = df.drop(columns=['open', 'high', 'low', 'close']).rename(columns={'volume': 'value'})
+                volume['color'] = self._volume_down_color
+                volume.loc[df['close'] > df['open'], 'color'] = self._volume_up_color
+                restore_js += f'''
+                    {self.id}.volumeSeries.setData({js_data(volume)});
+                    logVertical('3b-AfterVolume');
+                '''
+            
+            if scroll_position is not None:
+                restore_js += f'''
+                    // 4. Apply scroll position (horizontal position)
+                    {self.id}.chart.timeScale().scrollToPosition({scroll_position}, false);
+                    logVertical('4-AfterScrollPosition');
+                '''
+            
+            # NOTE: Vertical price range restoration is handled by mainwindow.py
+            # AFTER extensions are applied, to prevent timing conflicts
+            
+            
+            restore_js += '''
+                    console.log('[Restore] Immediate restore complete');
+                })();
+            '''
+            
+            self.run_script(restore_js)
+            
+            # Handle lines
+            for line in self._lines:
+                if line.name not in df.columns:
+                    continue
+                line.set(df[['time', line.name]], format_cols=False)
+        else:
+            # Standard path - no chart_state, use default behavior
+            self.run_script(f'{self.id}.series.setData({js_data(df)})')
 
-        # TODO keep drawings doesn't work consistenly w
+            if 'volume' in df:
+                volume = df.drop(columns=['open', 'high', 'low', 'close']).rename(columns={'volume': 'value'})
+                volume['color'] = self._volume_down_color
+                volume.loc[df['close'] > df['open'], 'color'] = self._volume_up_color
+                self.run_script(f'{self.id}.volumeSeries.setData({js_data(volume)})')
+
+            for line in self._lines:
+                if line.name not in df.columns:
+                    continue
+                line.set(df[['time', line.name]], format_cols=False)
+            
+            # Set autoScale to true in case the user has dragged the price scale
+            self.run_script(f'''
+                if (!{self.id}.chart.priceScale("right").options.autoScale)
+                    {self.id}.chart.priceScale("right").applyOptions({{autoScale: true}})
+            ''')
+            
+            # Force visible range to last 300 bars
+            data_len = len(df)
+            if data_len > 0:
+                start_idx = max(0, data_len - 300)
+                from_time = int(df.iloc[start_idx]['time'])
+                last_time = int(df.iloc[-1]['time'])
+                bar_interval = self._interval if 0 < self._interval <= 86400 else 300
+                margin_seconds = min(20 * bar_interval, 604800)
+                to_time = int(last_time + margin_seconds)
+                
+                from datetime import datetime as dt
+                logger.debug(f"DEBUG: Set Range - Len: {data_len}, Interval: {bar_interval}s")
+                logger.debug(f"DEBUG:   From: {from_time} ({dt.fromtimestamp(from_time).strftime('%Y-%m-%d %H:%M')})")
+                logger.debug(f"DEBUG:   To:   {to_time} ({dt.fromtimestamp(to_time).strftime('%Y-%m-%d %H:%M')})")
+                
+                self.run_script(f'''
+                    setTimeout(() => {{
+                        try {{
+                            {self._chart.id}.chart.timeScale().setVisibleRange({{ from: {from_time}, to: {to_time} }});
+                        }} catch (e) {{
+                            {self._chart.id}.chart.timeScale().fitContent();
+                        }}
+                    }}, 50);
+                ''')
+
+        # Handle drawings
         if keep_drawings:
             self.run_script(f'{self._chart.id}.toolBox?._drawingTool.repositionOnTime()')
         else:
@@ -794,8 +863,30 @@ class Candlestick(SeriesCommon):
                 else:
                     bar['volume'] = series['volume']
         else:
-            for key in ('open', 'high', 'low', 'close'):
-                bar[key] = series['price']
+            # [FIX] Use Previous Close as Open for new candle if on same day to prevent visual gaps
+            use_prev_close = False
+            if self._last_bar is not None:
+                try:
+                    # Check if same day
+                    # self._last_bar['time'] might be string or timestamp depending on processing
+                    last_ts = pd.to_datetime(self._last_bar['time'])
+                    curr_ts = pd.to_datetime(series['time'])
+                    if last_ts.date() == curr_ts.date():
+                        use_prev_close = True
+                except Exception:
+                    # Fallback to standard behavior on any error
+                    pass
+
+            if use_prev_close:
+                prev_close = self._last_bar['close']
+                bar['open'] = prev_close
+                bar['high'] = max(prev_close, series['price'])
+                bar['low'] = min(prev_close, series['price'])
+                bar['close'] = series['price']
+            else:
+                for key in ('open', 'high', 'low', 'close'):
+                    bar[key] = series['price']
+            
             bar['time'] = series['time']
             if 'volume' in series:
                 bar['volume'] = series['volume']
@@ -943,7 +1034,11 @@ class AbstractChart(Candlestick, Pane):
         self.run_script(f'''
         {self.id}.scale.width = {self._width}
         {self.id}.scale.height = {self._height}
-        {self.id}.reSize()
+        if ({self.id} && typeof {self.id}.reSize === 'function') {{
+            {self.id}.reSize()
+        }} else {{
+            console.warn("[Resize] {self.id}.reSize is not a function/object. Exists:", !!{self.id});
+        }}
         ''')
 
     def time_scale(self, right_offset: int = 0, min_bar_spacing: float = 0.5,

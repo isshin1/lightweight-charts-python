@@ -31,11 +31,16 @@ export abstract class TwoPointDrawingPaneRenderer extends DrawingPaneRenderer {
     _getScaledCoordinates(scope: BitmapCoordinatesRenderingScope) {
         if (this._p1.x === null || this._p1.y === null ||
             this._p2.x === null || this._p2.y === null) return null;
+
+        // Add 0.5 pixel offset for odd-width lines to prevent anti-aliasing blur
+        const scaledWidth = this._options.width * scope.horizontalPixelRatio;
+        const offset = scaledWidth % 2 !== 0 ? 0.5 : 0;
+
         return {
-            x1: Math.round(this._p1.x * scope.horizontalPixelRatio),
-            y1: Math.round(this._p1.y * scope.verticalPixelRatio),
-            x2: Math.round(this._p2.x * scope.horizontalPixelRatio),
-            y2: Math.round(this._p2.y * scope.verticalPixelRatio),
+            x1: Math.round(this._p1.x * scope.horizontalPixelRatio) + offset,
+            y1: Math.round(this._p1.y * scope.verticalPixelRatio) + offset,
+            x2: Math.round(this._p2.x * scope.horizontalPixelRatio) + offset,
+            y2: Math.round(this._p2.y * scope.verticalPixelRatio) + offset,
         }
     }
 
@@ -54,12 +59,15 @@ export abstract class TwoPointDrawingPaneRenderer extends DrawingPaneRenderer {
     // }
 
     _drawEndCircle(scope: BitmapCoordinatesRenderingScope, x: number, y: number) {
-        const radius = 9
-        scope.context.fillStyle = '#000';
+        const radius = 8;  // Slightly smaller radius
+        scope.context.save();
+        scope.context.fillStyle = '#ffffff';  // White fill (hollow look)
+        scope.context.strokeStyle = '#2962FF';  // Blue border
+        scope.context.lineWidth = 2;
         scope.context.beginPath();
         scope.context.arc(x, y, radius, 0, 2 * Math.PI);
-        scope.context.stroke();
         scope.context.fill();
-        // scope.context.strokeStyle = this._options.lineColor;
+        scope.context.stroke();
+        scope.context.restore();
     }
 }

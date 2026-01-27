@@ -4,7 +4,9 @@ import { DrawingOptions } from "../drawing/options";
 import { GlobalParams } from "../general/global-params";
 import { ColorPicker } from "./color-picker";
 import { StylePicker } from "./style-picker";
+import { WidthPicker } from "./width-picker";
 import { TextToolbar } from "./text-toolbar";
+import { showInputModal } from "../drawings/input-modal";
 
 
 export function camelToTitle(inputString: string) {
@@ -40,6 +42,8 @@ export class ContextMenu {
         this._onRightClick = this._onRightClick.bind(this);
         this.div = document.createElement('div');
         this.div.classList.add('context-menu');
+        this.div.style.position = 'fixed';  // Fixed positioning for viewport coordinates
+        this.div.style.zIndex = '99998';    // High z-index to appear above chart
         document.body.appendChild(this.div);
         this.hoverItem = null;
         document.body.addEventListener('contextmenu', this._onRightClick);
@@ -56,7 +60,38 @@ export class ContextMenu {
     }
 
     private _onRightClick(ev: MouseEvent) {
-        if (!Drawing.hoveredObject) return;
+        console.log('[ContextMenu] _onRightClick called, hoveredObject:', Drawing.hoveredObject);
+        if (!Drawing.hoveredObject) {
+            console.log('[ContextMenu] No hoveredObject, returning');
+            return;
+        }
+        console.log('[ContextMenu] Right Click on:', Drawing.hoveredObject._type);
+
+        // Check if drawing belongs to this drawingTool or any handler's drawingTool (split view support)
+        let isUserDrawing = this.drawingTool.drawings.includes(Drawing.hoveredObject);
+
+        if (!isUserDrawing && window.allChartHandlers) {
+            for (const handler of window.allChartHandlers) {
+                if (handler && handler.toolBox && handler.toolBox._drawingTool) {
+                    if (handler.toolBox._drawingTool.drawings.includes(Drawing.hoveredObject)) {
+                        isUserDrawing = true;
+                        console.log('[ContextMenu] Found drawing in handler:', handler.id);
+                        break;
+                    }
+                }
+            }
+        }
+
+        console.log('[ContextMenu] Is Valid User Drawing:', isUserDrawing, 'drawings count:', this.drawingTool.drawings.length);
+
+        if (!isUserDrawing) {
+            console.log('[ContextMenu] Not a user drawing, returning');
+            return;
+        }
+
+        // Close any existing alert menus before showing drawing menu
+        const alertMenus = document.querySelectorAll('.alert-context-menu');
+        alertMenus.forEach(el => { (el as HTMLElement).style.display = 'none'; });
 
         ev.preventDefault();
 
@@ -104,7 +139,9 @@ export class ContextMenu {
             if (optionName.toLowerCase().includes('color')) {
                 subMenu = new ColorPicker(this.saveDrawings, optionName as keyof DrawingOptions);
             } else if (optionName === 'lineStyle') {
-                subMenu = new StylePicker(this.saveDrawings)
+                subMenu = new StylePicker(this.saveDrawings);
+            } else if (optionName === 'width') {
+                subMenu = new WidthPicker(this.saveDrawings);
             } else continue;
 
             let onClick = (rect: DOMRect) => subMenu.openMenu(rect)
@@ -114,9 +151,48 @@ export class ContextMenu {
             })
         }
 
+        // Add/Edit Label menu item
+        const hasLabel = Drawing.lastHoveredObject && (
+            (Drawing.lastHoveredObject._options.text && Drawing.lastHoveredObject._options.text.trim() !== '') ||
+            ((Drawing.lastHoveredObject as any)._label && (Drawing.lastHoveredObject as any)._label.trim() !== '')
+        );
+        this.menuItem(hasLabel ? 'Edit Label' : 'Add Label', () => {
+            if (!Drawing.lastHoveredObject) return;
+            showInputModal(
+                Drawing.lastHoveredObject._options.text || '',
+                Drawing.lastHoveredObject._options.textPosition || 'above',
+                (res: { text: string; position: 'above' | 'below' }) => {
+                    Drawing.lastHoveredObject?.applyOptions({
+                        text: res.text,
+                        textPosition: res.position
+                    });
+                    // Promote system line to user drawing if not already in drawings
+                    if (!this.drawingTool.drawings.includes(Drawing.lastHoveredObject!)) {
+                        console.log('[ContextMenu] Promoting System Line to User Drawing');
+                        this.drawingTool.drawings.push(Drawing.lastHoveredObject!);
+                    }
+                    this.saveDrawings();
+                }
+            );
+        });
+
         let onClickDelete = () => {
             const type = Drawing.lastHoveredObject ? Drawing.lastHoveredObject._type : undefined;
-            this.drawingTool.delete(Drawing.lastHoveredObject);
+
+            // Find the correct drawingTool for this drawing (split view support)
+            let deleteFromTool = this.drawingTool;
+            if (!this.drawingTool.drawings.includes(Drawing.lastHoveredObject!) && window.allChartHandlers) {
+                for (const handler of window.allChartHandlers) {
+                    if (handler && handler.toolBox && handler.toolBox._drawingTool) {
+                        if (handler.toolBox._drawingTool.drawings.includes(Drawing.lastHoveredObject!)) {
+                            deleteFromTool = handler.toolBox._drawingTool;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            deleteFromTool.delete(Drawing.lastHoveredObject);
             this.saveDrawings(type);
         }
         this.separator()
@@ -140,7 +216,7 @@ export class ContextMenu {
         // contextMenu.separator()
         // contextMenu.menuItem('Delete Drawing', onClickDelete)
 
-
+        console.log('[ContextMenu] Showing menu at:', ev.clientX, ev.clientY);
         this.div.style.left = ev.clientX + 'px';
         this.div.style.top = ev.clientY + 'px';
         this.div.style.display = 'block';

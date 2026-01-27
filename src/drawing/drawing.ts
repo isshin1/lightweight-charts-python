@@ -243,10 +243,13 @@ export abstract class Drawing extends PluginBase {
         if (!point) return;
         point.logical = (point.logical + logicalDiff) as Logical;
         point.price = point.price + priceDiff;
-        point.time = Drawing._getExtrapolatedTime(point.logical, this.series, this.chart) || null;
+        if (this.isAttached) {
+            point.time = Drawing._getExtrapolatedTime(point.logical, this.series, this.chart) || null;
+        }
     }
 
     protected _syncPoints() {
+        if (!this.isAttached) return;
         for (const p of this.points) {
             if (p && p.time) {
                 const newLogical = Drawing._getExtrapolatedLogical(p.time, this.series, this.chart);
@@ -282,7 +285,7 @@ export abstract class Drawing extends PluginBase {
         }
     }
 
-    private _handleDragInteraction(param: MouseEventParams, shiftPressed: boolean): void {
+    protected _handleDragInteraction(param: MouseEventParams, shiftPressed: boolean): void {
         if (this._state != InteractionState.DRAGGING &&
             this._state != InteractionState.DRAGGINGP1 &&
             this._state != InteractionState.DRAGGINGP2 &&
@@ -303,6 +306,7 @@ export abstract class Drawing extends PluginBase {
             if (Math.sqrt(dx * dx + dy * dy) < 4) return;
         }
 
+        if (!this.isAttached) return;
         const mousePoint = Drawing._eventToPoint(param, this.series, this.chart);
         if (!mousePoint) return;
         this._startDragPoint = this._startDragPoint || mousePoint;

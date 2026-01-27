@@ -7,12 +7,15 @@ declare const window: GlobalParams;
 
 export class ColorPicker {
     private static readonly colors = [
-        '#EBB0B0','#E9CEA1','#E5DF80','#ADEB97','#A3C3EA','#D8BDED',
-        '#E15F5D','#E1B45F','#E2D947','#4BE940','#639AE1','#D7A0E8',
-        '#E42C2A','#E49D30','#E7D827','#3CFF0A','#3275E4','#B06CE3',
-        '#F3000D','#EE9A14','#F1DA13','#2DFC0F','#1562EE','#BB00EF',
-        '#B50911','#E3860E','#D2BD11','#48DE0E','#1455B4','#6E009F',
-        '#7C1713','#B76B12','#8D7A13','#479C12','#165579','#51007E',
+        // White to black scale
+        '#FFFFFF', '#E0E0E0', '#C0C0C0', '#A0A0A0', '#808080', '#000000',
+        // Color palette
+        '#EBB0B0', '#E9CEA1', '#E5DF80', '#ADEB97', '#A3C3EA', '#D8BDED',
+        '#E15F5D', '#E1B45F', '#E2D947', '#4BE940', '#639AE1', '#D7A0E8',
+        '#E42C2A', '#E49D30', '#E7D827', '#3CFF0A', '#3275E4', '#B06CE3',
+        '#F3000D', '#EE9A14', '#F1DA13', '#2DFC0F', '#1562EE', '#BB00EF',
+        '#B50911', '#E3860E', '#D2BD11', '#48DE0E', '#1455B4', '#6E009F',
+        '#7C1713', '#B76B12', '#8D7A13', '#479C12', '#165579', '#51007E',
     ]
 
     public _div: HTMLDivElement;
@@ -30,6 +33,8 @@ export class ColorPicker {
 
         this._div = document.createElement('div');
         this._div.classList.add('color-picker');
+        this._div.style.position = 'fixed';  // Fixed positioning for viewport coordinates
+        this._div.style.zIndex = '99999';    // Higher than context menu
 
         let colorPicker = document.createElement('div')
         colorPicker.style.margin = '10px'
@@ -57,11 +62,11 @@ export class ColorPicker {
 
         this._opacitySlider = document.createElement('input')
         this._opacitySlider.type = 'range'
-        this._opacitySlider.value = (this.opacity*100).toString();
-        this._opacityLabel.innerText = this._opacitySlider.value+'%'
+        this._opacitySlider.value = (this.opacity * 100).toString();
+        this._opacityLabel.innerText = this._opacitySlider.value + '%'
         this._opacitySlider.oninput = () => {
-            this._opacityLabel.innerText = this._opacitySlider.value+'%'
-            this.opacity = parseInt(this._opacitySlider.value)/100
+            this._opacityLabel.innerText = this._opacitySlider.value + '%'
+            this.opacity = parseInt(this._opacitySlider.value) / 100
             this.updateColor()
         }
 
@@ -72,13 +77,13 @@ export class ColorPicker {
         this._div.appendChild(colorPicker)
         this._div.appendChild(separator)
         this._div.appendChild(opacity)
-        window.containerDiv.appendChild(this._div)
+        document.body.appendChild(this._div)
 
     }
 
     private _updateOpacitySlider() {
-        this._opacitySlider.value = (this.opacity*100).toString();
-        this._opacityLabel.innerText = this._opacitySlider.value+'%';
+        this._opacitySlider.value = (this.opacity * 100).toString();
+        this._opacityLabel.innerText = this._opacitySlider.value + '%';
     }
 
     makeColorBox(color: string) {
@@ -117,7 +122,7 @@ export class ColorPicker {
     updateColor() {
         if (!Drawing.lastHoveredObject || !this.rgba) return;
         const oColor = `rgba(${this.rgba[0]}, ${this.rgba[1]}, ${this.rgba[2]}, ${this.opacity})`
-        Drawing.lastHoveredObject.applyOptions({[this.colorOption]: oColor})
+        Drawing.lastHoveredObject.applyOptions({ [this.colorOption]: oColor })
         this.saveDrawings()
     }
     openMenu(rect: DOMRect) {
@@ -127,9 +132,11 @@ export class ColorPicker {
         )
         this.opacity = this.rgba[3];
         this._updateOpacitySlider();
-        this._div.style.top = (rect.top-30)+'px'
-        this._div.style.left = rect.right+'px'
-        this._div.style.display = 'flex'
+        this._div.style.display = 'flex';
+
+        // Position same as other submenus: right of menu item with 5px gap
+        this._div.style.top = (rect.top - 30) + 'px';
+        this._div.style.left = (rect.right + 5) + 'px';
 
         setTimeout(() => document.addEventListener('mousedown', (event: MouseEvent) => {
             if (!this._div.contains(event.target as Node)) {

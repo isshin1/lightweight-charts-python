@@ -148,12 +148,8 @@ export class TextAnnotation extends Drawing {
       }
       this._lastClickTime = now;
 
-      // Single click - enter drag mode after a short delay to allow double-click
-      setTimeout(() => {
-        if (this._lastClickTime !== 0) {
-          this._moveToState(InteractionState.DRAGGING);
-        }
-      }, 100);
+      // Immediately enter drag mode (no delay)
+      this._moveToState(InteractionState.DRAGGING);
     }
   }
 
@@ -246,7 +242,7 @@ export class TextAnnotation extends Drawing {
     this._boxHeight = height;
   }
 
-  protected _mouseIsOverDrawing(param: MouseEventParams, tolerance = 0) {
+  protected _mouseIsOverDrawing(param: MouseEventParams, tolerance = 4) {
     if (!param.point) return false;
 
     const viewPoint = (this._paneViews[0] as TextAnnotationPaneView)._point;

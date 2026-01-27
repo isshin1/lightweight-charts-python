@@ -19,6 +19,7 @@ export class TrendLinePaneView extends TwoPointDrawingPaneView {
             this._p2,
             this._source._options,
             this._source.hovered,
+            this._source as TrendLine,
         );
     }
 }

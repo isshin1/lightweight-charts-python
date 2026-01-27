@@ -143,7 +143,69 @@ class QtChart(abstract.AbstractChart):
         self.webview.loadFinished.connect(lambda: QTimer.singleShot(2000, self.win.on_js_load))
         if using_pyside6:
             self.webview.setContextMenuPolicy(Qt.ContextMenuPolicy.NoContextMenu)
-        self.webview.load(QUrl.fromLocalFile(abstract.INDEX))
+        
+        # Load toolbox order and inject it into the HTML before loading
+        toolbox_order_script = self._get_toolbox_order_script()
+        if toolbox_order_script:
+            # Use a modified HTML that includes the toolbox order
+            self._load_with_toolbox_order(toolbox_order_script)
+        else:
+            self.webview.load(QUrl.fromLocalFile(abstract.INDEX))
+        
+        # Register handler for saving toolbox order
+        self.win.handlers["save_toolbox_order"] = self.on_save_toolbox_order
+
+    def _get_toolbox_order_script(self):
+        """Load toolbox order from file and return JS script to set it."""
+        import json
+        import os
+        try:
+            config_path = os.path.join(os.getcwd(), 'toolbox_order.json')
+            if os.path.exists(config_path):
+                with open(config_path, 'r') as f:
+                    order_json = f.read().strip()
+                if order_json:
+                    return f"window.TOOLBOX_ORDER = {order_json};"
+        except Exception as e:
+            logger.error(f"Failed to load toolbox order: {e}")
+        return None
+
+    def _load_with_toolbox_order(self, toolbox_order_script):
+        """Load the HTML page with toolbox order script injected before bundle.js."""
+        import tempfile
+        import os
+        
+        try:
+            with open(abstract.INDEX, 'r') as f:
+                html_content = f.read()
+            
+            # Inject the toolbox order script before bundle_safe.js
+            injection_point = '<script src="./bundle_safe.js'
+            if injection_point in html_content:
+                inject_script = f"<script>{toolbox_order_script}</script>\n    {injection_point}"
+                html_content = html_content.replace(injection_point, inject_script)
+            
+            # Write to a temp file in the same directory (for relative paths to work)
+            index_dir = os.path.dirname(abstract.INDEX)
+            temp_path = os.path.join(index_dir, 'index_with_order.html')
+            with open(temp_path, 'w') as f:
+                f.write(html_content)
+            
+            self.webview.load(QUrl.fromLocalFile(temp_path))
+        except Exception as e:
+            logger.error(f"Failed to inject toolbox order: {e}")
+            self.webview.load(QUrl.fromLocalFile(abstract.INDEX))
+
+    def on_save_toolbox_order(self, order_json):
+        import json
+        import os
+        try:
+            config_path = os.path.join(os.getcwd(), 'toolbox_order.json')
+            with open(config_path, 'w') as f:
+                f.write(order_json)
+            logger.info(f"Toolbox order saved to {config_path}")
+        except Exception as e:
+            logger.error(f"Failed to save toolbox order: {e}")
 
 
     def get_webview(self): return self.webview
@@ -176,6 +238,22 @@ class StaticLWC(abstract.AbstractChart):
         except FileNotFoundError:
             arrow_marker_js = ""  # If not found, skip
 
+
+
+        # Load saved toolbox order
+        import json
+        import os
+        toolbox_order_script = ""
+        try:
+            config_path = os.path.join(os.getcwd(), 'toolbox_order.json')
+            if os.path.exists(config_path):
+                with open(config_path, 'r') as f:
+                    order = f.read().strip()
+                    if order:
+                        toolbox_order_script = f"window.TOOLBOX_ORDER = {order};"
+        except Exception as e:
+            logger.error(f"Failed to load toolbox order: {e}")
+
         with open(abstract.INDEX, 'r') as f:
             self._html = f.read() \
                 .replace('<link rel="stylesheet" href="styles.css">', f"<style>{css}</style>") \
@@ -183,10 +261,13 @@ class StaticLWC(abstract.AbstractChart):
                 .replace(' src="./chart_stabilizer.js">', f'>{stabilizer_js}') \
                 .replace(' src="./bundle_safe.js">', f'>{js}') \
                 .replace(' src="./arrow_marker.js">', f'>{arrow_marker_js}') \
-                .replace('</body>\n</html>', '<script>')
+                .replace('</body>\n</html>', f'<script>{toolbox_order_script}</script>')
 
         super().__init__(abstract.Window(run_script=self.run_script), inner_width, inner_height,
                          scale_candles_only, toolbox, autosize)
+        
+        # Register handler
+        self.win.handlers["save_toolbox_order"] = self.on_save_toolbox_order
         self.width = width
         self.height = height
 
@@ -204,7 +285,22 @@ class StaticLWC(abstract.AbstractChart):
             self._html += '\n' + script
         self._load()
 
+
     def _load(self): pass
+
+    def on_save_toolbox_order(self, order_json):
+        import json
+        import os
+        try:
+            # Save to a file in the temp or user config dir
+            # For simplicity, saving to a local file 'toolbox_order.json'
+            # In a real app, this should go to a proper config location
+            config_path = os.path.join(os.getcwd(), 'toolbox_order.json')
+            with open(config_path, 'w') as f:
+                f.write(order_json)
+            logger.info(f"Toolbox order saved to {config_path}")
+        except Exception as e:
+            logger.error(f"Failed to save toolbox order: {e}")
 
 
 class StreamlitChart(StaticLWC):

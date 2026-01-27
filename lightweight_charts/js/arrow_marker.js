@@ -50,29 +50,51 @@
                 ctx.beginPath();
 
                 if (this._direction === 'up') {
-                    // Draw upward arrow (triangle pointing up)
-                    ctx.moveTo(x, y - halfSize);           // Top point
-                    ctx.lineTo(x - halfSize, y + halfSize); // Bottom left
-                    ctx.lineTo(x + halfSize, y + halfSize); // Bottom right
+                    // Draw upward arrow (pentagonal arrow like TradingView)
+                    const w = halfSize * 0.6;
+                    const h = halfSize;
+                    const stemH = halfSize * 0.4;
+                    ctx.moveTo(x, y - h);                    // Top point
+                    ctx.lineTo(x + halfSize, y);             // Right wing
+                    ctx.lineTo(x + w, y);                    // Right inner
+                    ctx.lineTo(x + w, y + stemH);            // Right stem bottom
+                    ctx.lineTo(x - w, y + stemH);            // Left stem bottom
+                    ctx.lineTo(x - w, y);                    // Left inner
+                    ctx.lineTo(x - halfSize, y);             // Left wing
                     ctx.closePath();
                 } else {
-                    // Draw downward arrow (triangle pointing down)
-                    ctx.moveTo(x, y + halfSize);           // Bottom point
-                    ctx.lineTo(x - halfSize, y - halfSize); // Top left
-                    ctx.lineTo(x + halfSize, y - halfSize); // Top right
+                    // Draw downward arrow (pentagonal arrow like TradingView)
+                    const w = halfSize * 0.6;
+                    const h = halfSize;
+                    const stemH = halfSize * 0.4;
+                    ctx.moveTo(x, y + h);                    // Bottom point
+                    ctx.lineTo(x + halfSize, y);             // Right wing
+                    ctx.lineTo(x + w, y);                    // Right inner
+                    ctx.lineTo(x + w, y - stemH);            // Right stem top
+                    ctx.lineTo(x - w, y - stemH);            // Left stem top
+                    ctx.lineTo(x - w, y);                    // Left inner
+                    ctx.lineTo(x - halfSize, y);             // Left wing
                     ctx.closePath();
                 }
 
                 ctx.fill();
 
+                // Add black border by default
+                ctx.strokeStyle = '#000000';
+                ctx.lineWidth = 1.5 * scope.horizontalPixelRatio;
+                ctx.stroke();
+
                 if (this._hovered) {
+                    // Additional highlight stroke when hovered
+                    ctx.strokeStyle = this._options.lineColor || '#ffffff';
+                    ctx.lineWidth = 2 * scope.horizontalPixelRatio;
                     ctx.stroke();
                 }
 
                 // Draw label if present
                 if (this._label) {
                     const fontSize = Math.round(12 * scope.verticalPixelRatio);
-                    ctx.font = `${fontSize}px Arial`;
+                    ctx.font = `bold ${fontSize}px sans-serif`;
                     ctx.textAlign = 'center';
                     ctx.textBaseline = 'middle';
 
@@ -201,6 +223,9 @@
 
         setLabel(text) {
             this._label = text;
+            // [FIX] Update options so saveDrawings captures the change
+            this._options.label = text;
+            this._options.text = text; // Keep for context menu detection
             this.requestUpdate();
         }
 
@@ -522,9 +547,9 @@
     Lib.ArrowDownMarker = ArrowDownMarker;
 
     // ============== Toolbox Integration ==============
-    // SVG icons for arrow markers
-    const ARROW_UP_SVG = '<path d="M14.5,6 L22,18 L7,18 Z"/>';
-    const ARROW_DOWN_SVG = '<path d="M14.5,22 L22,10 L7,10 Z"/>';
+    // SVG icons for arrow markers (TradingView style pentagonal arrows)
+    const ARROW_UP_SVG = '<path fill-rule="nonzero" d="M11 16v6h6v-6h4.865l-7.865-9.438-7.865 9.438h4.865zm7 7h-8v-6h-6l10-12 10 12h-6v6z"/>';
+    const ARROW_DOWN_SVG = '<path fill-rule="nonzero" d="M17 12v-6h-6v6h-4.865l7.865 9.438 7.865-9.438h-4.865zm-7-7h8v6h6l-10 12-10-12h6v-6z"/>';
 
     // Patch the ToolBox to add arrow marker buttons
     // This runs after bundle_safe.js has loaded
@@ -546,13 +571,37 @@
 
             // Add Arrow Up button
             const arrowUpBtn = this._makeToolBoxElement(ArrowUpMarker, 'KeyU', ARROW_UP_SVG);
+            arrowUpBtn.dataset.toolId = 'arrow_up';  // For reorder tracking
             this.buttons.push(arrowUpBtn);
             div.insertBefore(arrowUpBtn, div.lastChild); // Insert before trash button
 
             // Add Arrow Down button
             const arrowDownBtn = this._makeToolBoxElement(ArrowDownMarker, 'KeyD', ARROW_DOWN_SVG);
+            arrowDownBtn.dataset.toolId = 'arrow_down';  // For reorder tracking
             this.buttons.push(arrowDownBtn);
             div.insertBefore(arrowDownBtn, div.lastChild); // Insert before trash button
+
+            // Reorder all buttons based on saved TOOLBOX_ORDER
+            if (window.TOOLBOX_ORDER && Array.isArray(window.TOOLBOX_ORDER)) {
+                const savedOrder = window.TOOLBOX_ORDER;
+                const toolButtons = Array.from(div.querySelectorAll('.toolbox-button'));
+                const dragHandle = div.querySelector('.toolbox-drag-handle');
+
+                // Sort buttons based on saved order
+                toolButtons.sort((a, b) => {
+                    const aId = a.dataset.toolId;
+                    const bId = b.dataset.toolId;
+                    const aIdx = savedOrder.indexOf(aId);
+                    const bIdx = savedOrder.indexOf(bId);
+                    // Items not in savedOrder go to the end
+                    const aPriority = aIdx === -1 ? 999 : aIdx;
+                    const bPriority = bIdx === -1 ? 999 : bIdx;
+                    return aPriority - bPriority;
+                });
+
+                // Re-append buttons in sorted order (after drag handle)
+                toolButtons.forEach(btn => div.appendChild(btn));
+            }
 
             return div;
         };

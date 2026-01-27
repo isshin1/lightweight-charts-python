@@ -6,6 +6,8 @@ export interface GlobalParams extends Window {
     containerDiv: HTMLElement;
     setCursor: Function;
     cursor: string;
+    allChartHandlers: any[];  // For split view drawing detection
+    activeHandler: any;       // Currently active handler
 }
 
 interface paneStyle {
@@ -33,6 +35,7 @@ export const paneStyleDefault: paneStyle = {
 declare const window: GlobalParams;
 
 export function globalParamInit() {
+    console.log("Bundle Loaded");
     window.pane = {
         ...paneStyleDefault,
     }
@@ -43,6 +46,11 @@ export function globalParamInit() {
     }
     window.cursor = 'default';
     window.textBoxFocused = false;
+
+    // Initialize allChartHandlers array for split view support
+    if (!window.allChartHandlers) {
+        window.allChartHandlers = [];
+    }
 }
 
 export const setCursor = (type: string | undefined) => {

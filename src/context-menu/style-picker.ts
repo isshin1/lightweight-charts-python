@@ -7,11 +7,11 @@ declare const window: GlobalParams;
 
 export class StylePicker {
     private static readonly _styles = [
-        {name: 'Solid', var: LineStyle.Solid},
-        {name: 'Dotted', var: LineStyle.Dotted},
-        {name: 'Dashed', var: LineStyle.Dashed},
-        {name: 'Large Dashed', var: LineStyle.LargeDashed},
-        {name: 'Sparse Dotted', var: LineStyle.SparseDotted},
+        { name: 'Solid', var: LineStyle.Solid },
+        { name: 'Dotted', var: LineStyle.Dotted },
+        { name: 'Dashed', var: LineStyle.Dashed },
+        { name: 'Large Dashed', var: LineStyle.LargeDashed },
+        { name: 'Sparse Dotted', var: LineStyle.SparseDotted },
     ]
 
     public _div: HTMLDivElement;
@@ -22,10 +22,12 @@ export class StylePicker {
 
         this._div = document.createElement('div');
         this._div.classList.add('context-menu');
+        this._div.style.position = 'fixed';  // Fixed positioning for viewport coordinates
+        this._div.style.zIndex = '99999';    // Higher than context menu
         StylePicker._styles.forEach((style) => {
             this._div.appendChild(this._makeTextBox(style.name, style.var))
         })
-        window.containerDiv.appendChild(this._div);
+        document.body.appendChild(this._div);
     }
 
     private _makeTextBox(text: string, style: LineStyle) {
@@ -33,15 +35,15 @@ export class StylePicker {
         item.classList.add('context-menu-item');
         item.innerText = text
         item.addEventListener('click', () => {
-            Drawing.lastHoveredObject?.applyOptions({lineStyle: style});
+            Drawing.lastHoveredObject?.applyOptions({ lineStyle: style });
             this._saveDrawings();
         })
         return item
     }
 
     openMenu(rect: DOMRect) {
-        this._div.style.top = (rect.top-30)+'px'
-        this._div.style.left = rect.right+'px'
+        this._div.style.top = (rect.top - 30) + 'px'
+        this._div.style.left = (rect.right + 5) + 'px'
         this._div.style.display = 'block'
 
         setTimeout(() => document.addEventListener('mousedown', (event: MouseEvent) => {

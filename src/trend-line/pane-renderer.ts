@@ -4,10 +4,14 @@ import { CanvasRenderingTarget2D, BitmapCoordinatesRenderingScope } from "fancy-
 import { TwoPointDrawingPaneRenderer } from "../drawing/pane-renderer";
 import { DrawingOptions } from "../drawing/options";
 import { setLineStyle } from "../helpers/canvas-rendering";
+import { TrendLine } from "./trend-line";
 
 export class TrendLinePaneRenderer extends TwoPointDrawingPaneRenderer {
-    constructor(p1: ViewPoint, p2: ViewPoint, options: DrawingOptions, hovered: boolean) {
+    private _source: TrendLine | null;
+
+    constructor(p1: ViewPoint, p2: ViewPoint, options: DrawingOptions, hovered: boolean, source?: TrendLine) {
         super(p1, p2, options, hovered);
+        this._source = source || null;
     }
 
     draw(target: CanvasRenderingTarget2D) {
@@ -59,15 +63,27 @@ export class TrendLinePaneRenderer extends TwoPointDrawingPaneRenderer {
         const y = scaled.y1 + (scaled.y2 - scaled.y1) * labelPos;
 
         // Text styling
-        const fontSize = 11 * scope.verticalPixelRatio;
-        ctx.font = `${fontSize}px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif`;
+        ctx.font = `bold 12px sans-serif`;
         ctx.fillStyle = this._options.lineColor;
-        ctx.textAlign = labelPos < 0.5 ? 'left' : labelPos > 0.5 ? 'right' : 'center';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = this._options.textPosition === 'below' ? 'top' : 'bottom';
 
         // Position above or below the line
-        const textPosition = this._options.textPosition || 'above';
-        const offsetY = textPosition === 'above' ? -6 * scope.verticalPixelRatio : 14 * scope.verticalPixelRatio;
+        const offsetY = this._options.textPosition === 'below' ? 5 : -5;
 
         ctx.fillText(text, x, y + offsetY);
+
+        // Store label rect for hit testing (convert to logical coordinates)
+        if (this._source) {
+            const metrics = ctx.measureText(text);
+            const width = metrics.width / scope.horizontalPixelRatio;
+            const height = 14; // approximate text height
+            this._source._labelRect = {
+                x: (x / scope.horizontalPixelRatio) - (width / 2),
+                y: ((y + offsetY) / scope.verticalPixelRatio) - (height / 2),
+                width: width,
+                height: height
+            };
+        }
     }
 }
