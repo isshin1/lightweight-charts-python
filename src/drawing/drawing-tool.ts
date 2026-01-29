@@ -86,15 +86,16 @@ export class DrawingTool {
 
     addNewDrawing(drawing: Drawing) {
         // Sync logical indices from time to ensure consistency across timeframes
-        const timeScale = this._chart.timeScale();
         for (const point of drawing.points) {
             if (point && point.time) {
-                const coord = timeScale.timeToCoordinate(point.time as any);
-                if (coord !== null) {
-                    const logical = timeScale.coordinateToLogical(coord);
-                    if (logical !== null) {
-                        point.logical = logical;
-                    }
+                // Use proper extrapolation for times outside visible range
+                const extrapolatedLogical = Drawing._getExtrapolatedLogical(
+                    point.time,
+                    this._series,
+                    this._chart
+                );
+                if (extrapolatedLogical !== null) {
+                    point.logical = extrapolatedLogical;
                 }
             }
         }
@@ -124,10 +125,20 @@ export class DrawingTool {
                     newPoints.push(point);
                     continue;
                 }
-                const logical = point.time ? this._chart.timeScale()
-                    .coordinateToLogical(
-                        this._chart.timeScale().timeToCoordinate(point.time) || 0
-                    ) : point.logical;
+
+                let logical = point.logical;
+                if (point.time) {
+                    // Use proper extrapolation for times outside visible range
+                    const extrapolatedLogical = Drawing._getExtrapolatedLogical(
+                        point.time,
+                        this._series,
+                        this._chart
+                    );
+                    if (extrapolatedLogical !== null) {
+                        logical = extrapolatedLogical;
+                    }
+                }
+
                 newPoints.push({
                     time: point.time,
                     logical: logical as Logical,

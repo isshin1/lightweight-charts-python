@@ -129,7 +129,8 @@ export class TrendLine extends TwoPointDrawing {
                     document.body.dispatchEvent(new CustomEvent('drawing-changed', {
                         detail: { type: this._type }
                     }));
-                }
+                },
+                this.chart.chartElement().parentElement
             );
             return;
         }

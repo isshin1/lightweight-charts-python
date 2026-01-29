@@ -314,13 +314,11 @@ class SeriesCommon(Pane):
         self._last_bar = series
         self.run_script(f'''
             try {{
-                if ({self.id}.series && typeof {self.id}.series.update === 'function') {{
+                if (typeof {self.id} !== 'undefined' && {self.id} && {self.id}.series && typeof {self.id}.series.update === 'function') {{
                     {self.id}.series.update({js_data(series)});
-                }} else {{
-                    console.warn("Series update failed: series.update is not a function or series is missing for {self.id}");
                 }}
             }} catch(e) {{
-                console.warn("Series update critical error:", e);
+                // Silently ignore - chart may be destroyed or not yet initialized
             }}
         ''')
 
@@ -863,29 +861,11 @@ class Candlestick(SeriesCommon):
                 else:
                     bar['volume'] = series['volume']
         else:
-            # [FIX] Use Previous Close as Open for new candle if on same day to prevent visual gaps
-            use_prev_close = False
-            if self._last_bar is not None:
-                try:
-                    # Check if same day
-                    # self._last_bar['time'] might be string or timestamp depending on processing
-                    last_ts = pd.to_datetime(self._last_bar['time'])
-                    curr_ts = pd.to_datetime(series['time'])
-                    if last_ts.date() == curr_ts.date():
-                        use_prev_close = True
-                except Exception:
-                    # Fallback to standard behavior on any error
-                    pass
-
-            if use_prev_close:
-                prev_close = self._last_bar['close']
-                bar['open'] = prev_close
-                bar['high'] = max(prev_close, series['price'])
-                bar['low'] = min(prev_close, series['price'])
-                bar['close'] = series['price']
-            else:
-                for key in ('open', 'high', 'low', 'close'):
-                    bar[key] = series['price']
+            # New bar - use tick price for all OHLC values
+            # Note: We DON'T use prev_close as open because it corrupts data
+            # (e.g., if market gaps up, we'd record wrong high/low)
+            for key in ('open', 'high', 'low', 'close'):
+                bar[key] = series['price']
             
             bar['time'] = series['time']
             if 'volume' in series:
@@ -1163,6 +1143,89 @@ class AbstractChart(Candlestick, Pane):
         {l_id}.div.style.fontSize = '{font_size}px'
         {l_id}.div.style.fontFamily = '{font_family}'
         {l_id}.text.innerText = '{text}'
+        ''')
+
+    def add_legend_item(self, name: str, color: str, callback: callable, initial_state: bool = True):
+        """
+        Add a custom toggleable legend item for non-series indicators.
+        
+        Args:
+            name: Display name in the legend
+            color: Color of the indicator symbol
+            callback: Python function called with (visible: bool) when toggled
+            initial_state: Initial visibility state (True = visible)
+        """
+        # [SPLIT CHART FIX] Include chart ID in callback to isolate per-chart
+        callback_id = f'legend_toggle_{name.replace(" ", "_").lower()}_{self.id}'
+        
+        # Register Python callback
+        self.win.handlers[callback_id] = lambda state_str: callback(state_str == 'true')
+        
+        # Create legend row with toggle switch
+        self.run_script(f'''
+            (function() {{
+                const legend = {self.id}.legend;
+                if (!legend) return;
+                
+                // Check if already exists
+                if (legend._customItems && legend._customItems['{name}']) return;
+                if (!legend._customItems) legend._customItems = {{}};
+                
+                const row = document.createElement('div');
+                row.style.display = 'flex';
+                row.style.alignItems = 'center';
+                row.style.marginRight = '10px';
+                
+                const colorBox = document.createElement('span');
+                colorBox.style.color = '{color}';
+                colorBox.innerHTML = '▨';
+                colorBox.style.marginRight = '5px';
+                
+                const nameSpan = document.createElement('span');
+                nameSpan.innerText = '{name}';
+                nameSpan.style.marginRight = '8px';
+                
+                const toggle = document.createElement('div');
+                toggle.classList.add('legend-toggle-switch');
+                toggle.style.cursor = 'pointer';
+                toggle.style.width = '22px';
+                toggle.style.height = '16px';
+                toggle.style.display = 'flex';
+                toggle.style.alignItems = 'center';
+                toggle.style.justifyContent = 'center';
+                
+                // SVG eye icons
+                const eyeOpen = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>';
+                const eyeClosed = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>';
+                
+                let visible = {str(initial_state).lower()};
+                toggle.innerHTML = visible ? eyeOpen : eyeClosed;
+                toggle.style.opacity = visible ? '1' : '0.5';
+                nameSpan.style.opacity = visible ? '1' : '0.5';
+                colorBox.style.opacity = visible ? '1' : '0.5';
+                
+                toggle.onclick = function() {{
+                    visible = !visible;
+                    toggle.innerHTML = visible ? eyeOpen : eyeClosed;
+                    toggle.style.opacity = visible ? '1' : '0.5';
+                    nameSpan.style.opacity = visible ? '1' : '0.5';
+                    colorBox.style.opacity = visible ? '1' : '0.5';
+                    window.callbackFunction('{callback_id}_~_' + visible);
+                }};
+                
+                row.appendChild(colorBox);
+                row.appendChild(nameSpan);
+                row.appendChild(toggle);
+                
+                // Add to legend series container
+                if (legend.seriesContainer) {{
+                    legend.seriesContainer.appendChild(row);
+                }} else {{
+                    legend.div.appendChild(row);
+                }}
+                
+                legend._customItems['{name}'] = {{ row: row, visible: visible }};
+            }})();
         ''')
 
     def spinner(self, visible):

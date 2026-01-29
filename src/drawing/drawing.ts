@@ -3,7 +3,8 @@ import {
     ISeriesApi,
     Logical,
     MouseEventParams,
-    SeriesType
+    SeriesType,
+    Time
 } from 'lightweight-charts';
 
 import { PluginBase } from '../plugin-base';
@@ -189,46 +190,86 @@ export abstract class Drawing extends PluginBase {
         const timeScale = chart.timeScale();
         const coord = timeScale.timeToCoordinate(time);
         const logical = coord !== null ? timeScale.coordinateToLogical(coord) : null;
-        if (logical !== null) return logical;
 
-        // Extrapolate logic
-        const currentMsgLogical = timeScale.coordinateToLogical(chart.timeScale().width());
-        if (currentMsgLogical === null) return null;
+        // Direct lookup worked - use it
+        if (logical !== null) {
+            console.log('[DrawingSync] _getExtrapolatedLogical: time=' + time + ', date=' + new Date(time * 1000).toISOString() + ', direct=' + logical);
+            return logical;
+        }
 
-        let lastKnownIndex: number | null = null;
-        let lastKnownTime: any = null;
+        // Direct lookup failed (e.g., 3min timestamp on 15min chart)
+        // Binary search through the data to find the bar that contains this time
+        console.log('[DrawingSync] _getExtrapolatedLogical: time=' + time + ', date=' + new Date(time * 1000).toISOString() + ', coord=null, using binary search');
 
-        // Search backwards
+        // First, find the bounds of loaded data
+        const rightEdgeLogical = timeScale.coordinateToLogical(chart.timeScale().width());
+        if (rightEdgeLogical === null) return null;
+
+        // Find first and last loaded bar indices
+        let firstIdx: number | null = null;
+        let lastIdx: number | null = null;
+
+        // Search from right edge for last loaded bar
         for (let i = 0; i < 5000; i++) {
-            const idx = (currentMsgLogical - i) as Logical;
+            const idx = (rightEdgeLogical - i) as Logical;
             const d = series.dataByIndex(idx);
             if (d) {
-                lastKnownIndex = idx;
-                lastKnownTime = d.time;
+                lastIdx = idx;
                 break;
             }
         }
 
-        if (lastKnownIndex !== null && typeof lastKnownTime === 'number' && typeof time === 'number') {
-            // Estimate interval
-            const prev = series.dataByIndex((lastKnownIndex - 1) as Logical);
-            let interval = 60; // default to 60s
-            if (prev && typeof prev.time === 'number') {
-                interval = lastKnownTime - prev.time;
+        // Search for first loaded bar (go back up to 5000 bars from last)
+        if (lastIdx !== null) {
+            for (let i = lastIdx; i >= lastIdx - 5000 && i >= 0; i--) {
+                const d = series.dataByIndex(i as Logical);
+                if (d) {
+                    firstIdx = i;
+                } else if (firstIdx !== null) {
+                    break; // Found the start of continuous data
+                }
             }
-
-            // Safety: ensure interval is positive and non-zero to avoid Infinity
-            if (interval <= 0) interval = 60;
-
-            const timeDiff = time - lastKnownTime;
-            const logicalDiff = Math.round(timeDiff / interval);
-
-            if (!isFinite(logicalDiff)) return null;
-
-            return (lastKnownIndex + logicalDiff) as Logical;
         }
 
-        return null;
+        if (firstIdx === null || lastIdx === null) {
+            console.log('[DrawingSync] _getExtrapolatedLogical: no data found');
+            return null;
+        }
+
+        // Binary search to find the bar index for this time
+        let left = firstIdx;
+        let right = lastIdx;
+
+        while (left <= right) {
+            const mid = Math.floor((left + right) / 2);
+            const d = series.dataByIndex(mid as Logical);
+
+            if (!d || typeof d.time !== 'number') {
+                // No data at this index, search left
+                right = mid - 1;
+                continue;
+            }
+
+            if (d.time === time) {
+                console.log('[DrawingSync] _getExtrapolatedLogical: binary search found exact match at ' + mid);
+                return mid as Logical;
+            } else if (d.time < time) {
+                // Target time is after this bar, search right
+                left = mid + 1;
+            } else {
+                // Target time is before this bar, search left
+                right = mid - 1;
+            }
+        }
+
+        // Binary search completed, 'left' is the insertion point
+        // Return the bar just before or at the target time
+        const resultIdx = Math.max(firstIdx, left - 1);
+        const resultBar = series.dataByIndex(resultIdx as Logical);
+        console.log('[DrawingSync] _getExtrapolatedLogical: binary search result=' + resultIdx +
+            ', barTime=' + (resultBar ? new Date((resultBar.time as number) * 1000).toISOString() : 'null'));
+
+        return resultIdx as Logical;
     }
 
     protected static _getDiff(p1: Point, p2: Point): DiffPoint {
@@ -241,9 +282,13 @@ export abstract class Drawing extends PluginBase {
 
     protected _addDiffToPoint(point: Point | null, logicalDiff: number, priceDiff: number) {
         if (!point) return;
+
         point.logical = (point.logical + logicalDiff) as Logical;
         point.price = point.price + priceDiff;
+
         if (this.isAttached) {
+            // Get the actual time for this bar index from the chart data
+            // This correctly handles market gaps (overnight, weekends)
             point.time = Drawing._getExtrapolatedTime(point.logical, this.series, this.chart) || null;
         }
     }

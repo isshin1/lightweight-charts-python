@@ -13,11 +13,22 @@ export interface InputModalResult {
 export function showInputModal(
     initialText: string | null,
     initialPosition: string | null,
-    callback: (result: InputModalResult) => void
+    callback: (result: InputModalResult) => void,
+    container?: HTMLElement | null
 ): void {
+    // Get the parent container - use provided container or fallback to document.body
+    // For split charts, we want to use the chart container so the overlay only covers that chart
+    const parentElement = container || document.body;
+    const useAbsolutePositioning = container !== null && container !== undefined;
+
     // Create modal overlay
     const modal = document.createElement('div');
     modal.classList.add('confirmation-modal');
+
+    // If we have a specific container, use absolute positioning relative to it
+    if (useAbsolutePositioning) {
+        modal.classList.add('chart-modal');
+    }
 
     // Modal content container
     const content = document.createElement('div');
@@ -62,7 +73,7 @@ export function showInputModal(
 
     // Close modal function
     const close = () => {
-        document.body.removeChild(modal);
+        parentElement.removeChild(modal);
         document.removeEventListener('keydown', onKeyDown);
     };
 
@@ -121,7 +132,7 @@ export function showInputModal(
     content.appendChild(posDiv);
     content.appendChild(buttons);
     modal.appendChild(content);
-    document.body.appendChild(modal);
+    parentElement.appendChild(modal);
 
     // Focus input after render
     setTimeout(() => {

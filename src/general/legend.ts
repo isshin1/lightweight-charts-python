@@ -49,6 +49,8 @@ export class Legend {
         this.text = document.createElement('span')
         this.text.style.lineHeight = '1.8'
         this.candle = document.createElement('div')
+        // [FIX] Set min-height to preserve vertical spacing when OHLC is hidden
+        this.candle.style.minHeight = '1.8em'
 
         seriesWrapper.appendChild(this.seriesContainer);
         this.div.appendChild(this.text)
@@ -116,6 +118,14 @@ export class Legend {
                 })
                 group.innerHTML = openEye
             }
+            // Notify Python of visibility change so it can update extension_states
+            // This is needed for proper split chart state propagation
+            // Include handler.id so split charts can identify which chart this toggle belongs to
+            try {
+                (window as any).callbackFunction(`legend_line_toggle_~_${this.handler.id}_~_${name}_~_${on}`)
+            } catch (e) {
+                console.warn('Failed to notify Python of legend toggle:', e)
+            }
         })
 
         svg.appendChild(group)
@@ -181,10 +191,15 @@ export class Legend {
         const options: any = this.handler.series.options()
 
         if (!param.time) {
-            this.candle.style.color = 'transparent'
-            this.candle.innerHTML = this.candle.innerHTML.replace(options['upColor'], '').replace(options['downColor'], '')
+            // [FIX] Use opacity:0 instead of visibility:hidden or color:transparent
+            // This hides the content while preserving the element's height/layout
+            // so that extension items don't shift when cursor moves off chart
+            this.candle.style.opacity = '0';
             return
         }
+
+        // Restore visibility when we have data
+        this.candle.style.opacity = '1';
 
         let data: any;
         let logical: Logical | null = null;

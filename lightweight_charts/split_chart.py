@@ -562,11 +562,13 @@ class QtSplitChart(QObject):
                                 }
                                 
                                 try {
-                                    // Use the Y-coordinate to find equivalent price on target chart
-                                    // This syncs the visual position (mouse height) rather than data value
-                                    var targetPrice = target.series.coordinateToPrice(param.point.y);
-                                    if (targetPrice !== null) {
-                                        target.chart.setCrosshairPosition(targetPrice, param.time, target.series);
+                                    // Get the actual price from SOURCE chart at the cursor position
+                                    // This ensures same-symbol charts show identical prices in both price axes
+                                    var sourcePrice = source.series.coordinateToPrice(param.point.y);
+                                    if (sourcePrice !== null) {
+                                        // Pass the actual price value to target chart
+                                        // Target chart will display this same price on its axis
+                                        target.chart.setCrosshairPosition(sourcePrice, param.time, target.series);
                                     }
                                 } catch(e) {
                                     console.log("[QtSplitChart] Sync error: " + e);
@@ -1298,18 +1300,19 @@ class QtSplitChart(QObject):
         return self._main_chart.toolbox if self._main_chart else None
 
     def configure_toolbox_save_under(self, widget):
-        """Configure drawing persistence widget for both charts."""
+        """Configure drawing persistence widget for ALL charts (not just main/sub)."""
         logger.debug("[QtSplitChart] configure_toolbox_save_under called")
-        if self._main_chart and self._main_chart.toolbox:
-            logger.debug(f"[QtSplitChart] Configuring Main Chart Toolbox ({self._main_chart.id})")
-            self._main_chart.toolbox.save_drawings_under(widget)
-        if self._sub_chart and self._sub_chart.toolbox:
-            logger.debug(f"[QtSplitChart] Configuring Sub Chart Toolbox ({self._sub_chart.id})")
-            self._sub_chart.toolbox.save_drawings_under(widget)
+        # Configure ALL 4 pre-created charts
+        for idx, chart in enumerate(self._charts):
+            if chart and chart.toolbox:
+                logger.debug(f"[QtSplitChart] Configuring Chart[{idx}] Toolbox ({chart.id})")
+                chart.toolbox.save_drawings_under(widget)
             
     def connect_drawing_changed_signal(self, callback):
-        """Connect drawing changed callback for both toolboxes."""
-        if self._main_chart and self._main_chart.toolbox:
-            self._main_chart.toolbox.on_drawing_changed = callback
-        if self._sub_chart and self._sub_chart.toolbox:
-            self._sub_chart.toolbox.on_drawing_changed = callback
+        """Connect drawing changed callback for ALL chart toolboxes."""
+        # Connect ALL 4 pre-created charts
+        for idx, chart in enumerate(self._charts):
+            if chart and chart.toolbox:
+                logger.debug(f"[QtSplitChart] Connecting on_drawing_changed for Chart[{idx}]")
+                chart.toolbox.on_drawing_changed = callback
+

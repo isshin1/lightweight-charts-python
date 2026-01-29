@@ -29,12 +29,21 @@ class OrderPlugin {
       this.handler.wrapper.addEventListener('mousemove', this._handleMouseMove);
       this.handler.wrapper.addEventListener('mousedown', this._handleMouseDown);
       document.addEventListener('mouseup', this._handleMouseUp);
+    } else {
+      console.warn('OrderPlugin: Handler wrapper not ready during init. Retrying listeners in 500ms...');
+      setTimeout(() => {
+        if (this.handler.wrapper) {
+          this.handler.wrapper.addEventListener('mousemove', this._handleMouseMove);
+          this.handler.wrapper.addEventListener('mousedown', this._handleMouseDown);
+          document.addEventListener('mouseup', this._handleMouseUp);
+        }
+      }, 500);
     }
 
     requestAnimationFrame(this._renderLoop);
   }
 
-  addOrder(id, price, title, color, textColor, axisLabelVisible, draggable, zIndex, entryPrice, dashed) {
+  addOrder(id, price, title, color, textColor, axisLabelVisible, draggable, zIndex, entryPrice, dashed, retryCount = 0) {
     if (this.orders.has(id)) this.removeOrder(id);
 
     // Default draggable to true if undefined
@@ -45,8 +54,12 @@ class OrderPlugin {
     if (dashed === undefined) dashed = false;
 
     if (!this.handler || !this.handler.series) {
-      console.warn('OrderPlugin: Handler or series not waiting, retrying order add...', id);
-      setTimeout(() => this.addOrder(id, price, title, color, textColor, axisLabelVisible, draggable, zIndex, entryPrice, dashed), 100);
+      if (retryCount > 50) { // Max 5 seconds retry
+        console.error('OrderPlugin: Failed to add order after 50 retries (Handler/Series missing):', id);
+        return;
+      }
+      // console.warn('OrderPlugin: Handler or series not waiting, retrying order add...', id);
+      setTimeout(() => this.addOrder(id, price, title, color, textColor, axisLabelVisible, draggable, zIndex, entryPrice, dashed, retryCount + 1), 100);
       return;
     }
 
@@ -101,7 +114,7 @@ class OrderPlugin {
     closeBtn.onmousedown = (e) => { e.stopPropagation(); }; // Prevent drag start
     closeBtn.onclick = (e) => {
       e.stopPropagation();
-      window.callbackFunction('remove_order_~_' + id);
+      window.callbackFunction('remove_order' + this.handler.id + '_~_' + id);
       this.removeOrder(id);
     };
 
@@ -128,7 +141,10 @@ class OrderPlugin {
     };
 
     this.handler.div.appendChild(label);
-    this.orders.set(id, { price, line, label, title, color, draggable, entryPrice });
+
+    // Store necessary params to recreate if needed in render loop
+    const params = { id, price, title, color, textColor, axisLabelVisible, draggable, zIndex, entryPrice, dashed };
+    this.orders.set(id, { price, line, label, title, color, draggable, entryPrice, params });
   }
 
   removeOrder(id) {
@@ -150,11 +166,58 @@ class OrderPlugin {
       const priceScale = this.handler.series.priceScale();
       const priceScaleWidth = priceScale.width();
 
+      // Fix: Get height from chart options or container, as priceScale() doesn't expose height()
+      let chartHeight = 0;
+      try {
+        if (this.handler.chart && this.handler.chart.options) {
+          chartHeight = this.handler.chart.options().height;
+        }
+      } catch (e) { }
+
+      if (!chartHeight && this.handler.div) {
+        chartHeight = this.handler.div.clientHeight;
+      }
+
       for (const [id, order] of this.orders) {
-        const y = this.handler.series.priceToCoordinate(order.price);
+
+        // 1. Validation: Check if line still exists on chart (might be cleared on reset)
+        // Check line object validity? Not easy.
+
+        let y = null;
+        try {
+          y = this.handler.series.priceToCoordinate(order.price);
+        } catch (e) { }
+
         if (y === null) {
+          // Price is outside visible range.
+          // Fallback logic to show arrow/label at top/bottom
+
+          // For now, if null, try to detect direction
+          let visibleRange = null;
+          try {
+            // Check if function exists
+            // @ts-ignore
+            if (typeof priceScale.getVisiblePriceRange === 'function') {
+              visibleRange = priceScale.getVisiblePriceRange();
+            }
+          } catch (e) { }
+
+          if (visibleRange) {
+            if (order.price > visibleRange.to) {
+              y = 0; // Top
+            } else if (order.price < visibleRange.from) {
+              y = chartHeight; // Bottom
+            }
+          }
+        }
+
+        if (y === null) {
+          // Still null (range check failed?), fallback to hide
           order.label.style.display = 'none';
         } else {
+          // Clamp y to be safe visually
+          y = Math.max(0, Math.min(y, chartHeight));
+
           order.label.style.display = 'flex';
           // Center label vertically on the line
           order.label.style.top = (y - 12) + 'px';
@@ -177,7 +240,7 @@ class OrderPlugin {
       if (order) {
         console.log('[OrderPlugin] MouseUp - Sending callback for:', this.draggingOrderId, 'price:', order.price.toFixed(2));
         if (typeof window.callbackFunction === 'function') {
-          window.callbackFunction('update_order_~_' + this.draggingOrderId + '_~_' + order.price.toFixed(2));
+          window.callbackFunction('update_order' + this.handler.id + '_~_' + this.draggingOrderId + '_~_' + order.price.toFixed(2));
         } else {
           console.error('[OrderPlugin] window.callbackFunction is not defined!');
         }
@@ -204,7 +267,13 @@ class OrderPlugin {
             const order = this.orders.get(this.draggingOrderId);
             if (order) {
               order.price = price;
-              order.line.applyOptions({ price: price });
+              // order.line.applyOptions({ price: price }); // Updating line might fail if line is detached
+              try {
+                order.line.applyOptions({ price: price });
+              } catch (err) {
+                // If line update fails, try to recreate it? or just fail gracefully
+              }
+
               order.label.style.cursor = 'grabbing';
               // Dynamic title update if entryPrice is available
               if (order.entryPrice !== undefined && order.entryPrice !== null) {

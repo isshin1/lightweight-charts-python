@@ -9,6 +9,7 @@ import { HorizontalLine } from "../horizontal-line/horizontal-line";
 import { RayLine } from "../horizontal-line/ray-line";
 import { VerticalLine } from "../vertical-line/vertical-line";
 import { TextAnnotation } from "../text-annotation/text-annotation";
+import { drawingSyncManager } from "../drawing/drawing-sync";
 
 
 interface Icon {
@@ -38,6 +39,7 @@ export class ToolBox {
     private _handlerID: string;
 
     private _drawingTool: DrawingTool;
+    private _currentSymbol: string = '';
 
     constructor(handlerID: string, chart: IChartApi, series: ISeriesApi<SeriesType>, commandFunctions: Function[]) {
         this._handlerID = handlerID;
@@ -498,6 +500,11 @@ export class ToolBox {
         const string = JSON.stringify(drawingMeta);
         // Append drawingType to the message to allow filtering on Python side
         window.callbackFunction(`save_drawings${this._handlerID}_~_${string}_~_${type || ''}`)
+
+        // [NEW] Trigger cross-chart sync for split view support
+        if (this._currentSymbol) {
+            drawingSyncManager.syncFromChart(this._handlerID);
+        }
     }
 
     loadDrawings(drawings: any[]) { // TODO any
@@ -525,5 +532,65 @@ export class ToolBox {
                     break;
             }
         })
+    }
+
+    /**
+     * Register this chart with the DrawingSyncManager for cross-chart drawing sync.
+     * Call this when a chart is assigned a symbol.
+     */
+    registerForSync(symbol: string): void {
+        this._currentSymbol = symbol;
+        drawingSyncManager.registerChart(this._handlerID, symbol, this);
+        console.log(`[ToolBox] Registered chart ${this._handlerID} for sync with symbol ${symbol}`);
+    }
+
+    /**
+     * Unregister this chart from the DrawingSyncManager (e.g., when closing a split).
+     */
+    unregisterFromSync(): void {
+        drawingSyncManager.unregisterChart(this._handlerID);
+        this._currentSymbol = '';
+        console.log(`[ToolBox] Unregistered chart ${this._handlerID} from sync`);
+    }
+
+    /**
+     * Update the symbol for this chart (triggers re-registration with DrawingSyncManager).
+     */
+    setSymbol(symbol: string): void {
+        if (this._currentSymbol !== symbol) {
+            this._currentSymbol = symbol;
+            drawingSyncManager.updateSymbol(this._handlerID, symbol);
+            console.log(`[ToolBox] Updated chart ${this._handlerID} symbol to ${symbol}`);
+        }
+    }
+
+    /**
+     * Get the current symbol for this chart.
+     */
+    getSymbol(): string {
+        return this._currentSymbol;
+    }
+
+    /**
+     * Get the handler ID for this chart.
+     */
+    getHandlerID(): string {
+        return this._handlerID;
+    }
+
+    /**
+     * Get the DrawingTool instance (for DrawingSyncManager access).
+     */
+    getDrawingTool(): DrawingTool {
+        return this._drawingTool;
+    }
+
+    /**
+     * Reposition all drawings based on their stored timestamps.
+     * This recalculates the logical (bar index) from the time coordinate,
+     * enabling cross-timeframe drawing sync.
+     */
+    repositionOnTime(): void {
+        this._drawingTool.repositionOnTime();
     }
 }

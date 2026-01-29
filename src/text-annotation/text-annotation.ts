@@ -169,8 +169,17 @@ export class TextAnnotation extends Drawing {
   }
 
   private _showInputModal(currentText: string, onConfirm: (text: string) => void) {
+    // Get the parent container - use chart container so overlay only covers this chart
+    const parentElement = this.chart.chartElement().parentElement || document.body;
+    const useChartContainer = parentElement !== document.body;
+
     const modal = document.createElement('div');
     modal.classList.add('confirmation-modal');
+
+    // If we have a specific container, add chart-modal class for absolute positioning
+    if (useChartContainer) {
+      modal.classList.add('chart-modal');
+    }
 
     const content = document.createElement('div');
     content.classList.add('modal-content');
@@ -196,7 +205,7 @@ export class TextAnnotation extends Drawing {
     cancelBtn.classList.add('modal-button', 'cancel');
 
     const close = () => {
-      document.body.removeChild(modal);
+      parentElement.removeChild(modal);
       document.removeEventListener('keydown', onKeyDown);
     };
 
@@ -226,7 +235,7 @@ export class TextAnnotation extends Drawing {
     content.appendChild(input);
     content.appendChild(buttons);
     modal.appendChild(content);
-    document.body.appendChild(modal);
+    parentElement.appendChild(modal);
 
     setTimeout(() => {
       input.focus();

@@ -66,3 +66,12 @@ class ToolBox:
                 self.on_drawing_changed()
         else:
             logger.debug("[DEBUG] ToolBox has no on_drawing_changed callback!")
+
+    def reposition_on_time(self):
+        """
+        Reposition all drawings based on their stored timestamps.
+        This recalculates the bar index from the time coordinate,
+        enabling cross-timeframe drawing sync.
+        """
+        self.run_script(f'if ({self.id}.toolBox) {self.id}.toolBox.repositionOnTime()')
+

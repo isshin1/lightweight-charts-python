@@ -285,6 +285,11 @@ body {
 	z-index: 10000;
 }
 
+/* Chart-relative modal for split charts - only overlays the specific chart */
+.confirmation-modal.chart-modal {
+	position: absolute;
+}
+
 .modal-content {
 	background-color: #1e222d;
 	border: 1px solid var(--border-color);

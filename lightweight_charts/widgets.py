@@ -77,7 +77,7 @@ except ImportError:
 def emit_callback(window, string):
     try:
         func, args = parse_event_message(window, string)
-        logger.debug(f"emit_callback: name={string.split('_~_')[0]}, args={args}")
+        # logger.debug(f"emit_callback: name={string.split('_~_')[0]}, args={args}")
         asyncio.create_task(func(*args)) if asyncio.iscoroutinefunction(func) else func(*args)
     except KeyError as e:
         logger.error(f"emit_callback: Handler not found for key: {e}")
@@ -179,8 +179,8 @@ class QtChart(abstract.AbstractChart):
             with open(abstract.INDEX, 'r') as f:
                 html_content = f.read()
             
-            # Inject the toolbox order script before bundle_safe.js
-            injection_point = '<script src="./bundle_safe.js'
+            # Inject the toolbox order script before bundle.js
+            injection_point = '<script src="./bundle.js'
             if injection_point in html_content:
                 inject_script = f"<script>{toolbox_order_script}</script>\n    {injection_point}"
                 html_content = html_content.replace(injection_point, inject_script)
@@ -217,7 +217,7 @@ class StaticLWC(abstract.AbstractChart):
 
         with open(abstract.INDEX.replace("index.html", 'styles.css'), 'r') as f:
             css = f.read()
-        with open(abstract.INDEX.replace("index.html", 'bundle_safe.js'), 'r') as f:
+        with open(abstract.INDEX.replace("index.html", 'bundle.js'), 'r') as f:
             js = f.read()
         with open(abstract.INDEX.replace("index.html", 'lightweight-charts.js'), 'r') as f:
             lwc = f.read()
@@ -259,7 +259,7 @@ class StaticLWC(abstract.AbstractChart):
                 .replace('<link rel="stylesheet" href="styles.css">', f"<style>{css}</style>") \
                 .replace(' src="./lightweight-charts.js">', f'>{lwc}') \
                 .replace(' src="./chart_stabilizer.js">', f'>{stabilizer_js}') \
-                .replace(' src="./bundle_safe.js">', f'>{js}') \
+                .replace(' src="./bundle.js">', f'>{js}') \
                 .replace(' src="./arrow_marker.js">', f'>{arrow_marker_js}') \
                 .replace('</body>\n</html>', f'<script>{toolbox_order_script}</script>')
 

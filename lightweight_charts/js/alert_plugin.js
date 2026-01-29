@@ -239,7 +239,7 @@ class AlertPlugin {
         // Restore cursor
         alert.label.style.cursor = 'grab';
         // Send callback to Python
-        window.callbackFunction('update_alert_~_' + this.draggingAlertId + '_~_' + alert.price.toFixed(2));
+        window.callbackFunction('update_alert' + this.handler.id + '_~_' + this.draggingAlertId + '_~_' + alert.price.toFixed(2));
       }
       // Restore chart scrolling/scaling
       if (this.handler && this.handler.chart) {
@@ -316,7 +316,7 @@ class AlertPlugin {
   // Called from UI context menu - triggers backend creation
   addAlertFromUI(chartId, price) {
     const id = 'alert-' + Date.now();
-    window.callbackFunction('add_alert_~_' + id + '_~_' + price.toFixed(2));
+    window.callbackFunction('add_alert' + this.handler.id + '_~_' + id + '_~_' + price.toFixed(2));
     // Note: The visual will be added when _load_backend_alerts calls addAlert after backend confirms
   }
 
@@ -376,7 +376,7 @@ class AlertPlugin {
     closeBtn.onclick = (e) => {
       e.stopPropagation();
       this.removeAlert(id);
-      window.callbackFunction('remove_alert_~_' + id);
+      window.callbackFunction('remove_alert' + this.handler.id + '_~_' + id);
     };
 
     const textSpan = document.createElement('span');
@@ -447,7 +447,7 @@ class AlertMenu {
       e.stopPropagation();
       this.div.style.display = 'none';
       this.close();
-      setTimeout(() => window.callbackFunction('request_buy_~_' + price.toFixed(1)), 50);
+      setTimeout(() => window.callbackFunction('request_buy' + this.handler.id + '_~_' + price.toFixed(1)), 50);
     };
     this.div.appendChild(buyItem);
 

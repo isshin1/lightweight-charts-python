@@ -232,13 +232,32 @@
     }
 
     function getVRatio() {
-      // For 3_left_big and 3_right_big, chart 0's height is 100%
-      // So we need to read from chart 1's height instead
-      if (charts.c1 && charts.c1.wrapper && parseFloat(charts.c1.wrapper.style.height) > 0) {
+      // For 3_right_big mode: chart 0 and chart 2 are stacked on left (each 50% height)
+      // Chart 1 is full height on right, so we read from chart 0's height
+      // For 3_left_big mode: chart 1 and chart 3 are stacked on right (each 50% height)
+      // Chart 0 is full height on left, so we read from chart 1's height
+
+      // Check current mode to determine which chart to read height from
+      if (g_mode === '3_right_big') {
+        // In 3_right_big, chart 0 has the actual vertical split ratio
+        if (charts.c0 && charts.c0.wrapper) {
+          const h = parseFloat(charts.c0.wrapper.style.height) || 50;
+          return h / 100;
+        }
+      } else if (g_mode === '3_left_big') {
+        // In 3_left_big, chart 1 has the actual vertical split ratio
+        if (charts.c1 && charts.c1.wrapper && parseFloat(charts.c1.wrapper.style.height) > 0) {
+          const h = parseFloat(charts.c1.wrapper.style.height) || 50;
+          return h / 100;
+        }
+      }
+
+      // Fallback: try chart 1 first, then chart 0
+      if (charts.c1 && charts.c1.wrapper && parseFloat(charts.c1.wrapper.style.height) > 0 && parseFloat(charts.c1.wrapper.style.height) < 100) {
         const h = parseFloat(charts.c1.wrapper.style.height) || 50;
         return h / 100;
       }
-      if (charts.c0 && charts.c0.wrapper) {
+      if (charts.c0 && charts.c0.wrapper && parseFloat(charts.c0.wrapper.style.height) < 100) {
         const h = parseFloat(charts.c0.wrapper.style.height) || 50;
         return h / 100;
       }
