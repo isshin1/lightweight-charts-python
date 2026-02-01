@@ -166,6 +166,18 @@ class OrderPlugin {
       const priceScale = this.handler.series.priceScale();
       const priceScaleWidth = priceScale.width();
 
+      // Get chart element offset - priceToCoordinate returns coords relative to chart canvas,
+      // but label is positioned relative to handler.div (which may have legend at top)
+      let chartTopOffset = 0;
+      try {
+        if (this.handler.chart && this.handler.chart.chartElement && this.handler.div) {
+          const chartEl = this.handler.chart.chartElement();
+          const divRect = this.handler.div.getBoundingClientRect();
+          const chartRect = chartEl.getBoundingClientRect();
+          chartTopOffset = chartRect.top - divRect.top;
+        }
+      } catch (e) { }
+
       // Fix: Get height from chart options or container, as priceScale() doesn't expose height()
       let chartHeight = 0;
       try {
@@ -219,8 +231,8 @@ class OrderPlugin {
           y = Math.max(0, Math.min(y, chartHeight));
 
           order.label.style.display = 'flex';
-          // Center label vertically on the line
-          order.label.style.top = (y - 12) + 'px';
+          // Center label vertically on the line, accounting for chart element offset
+          order.label.style.top = (y + chartTopOffset - 12) + 'px';
           // Anchor to the right edge of chart area (next to scale)
           order.label.style.right = priceScaleWidth + 'px';
         }

@@ -135,11 +135,38 @@
 
         update() {
             const point = this._source._point;
-            const timeScale = this._source.chart.timeScale();
+            const chart = this._source.chart;
             const series = this._source.series;
 
-            const timeCoord = point.time ? timeScale.timeToCoordinate(point.time) : null;
-            this._point.x = timeCoord !== null ? timeCoord : timeScale.logicalToCoordinate(point.logical);
+            if (!chart || !series) {
+                this._point.x = null;
+                this._point.y = null;
+                return;
+            }
+
+            const timeScale = chart.timeScale();
+
+            // Try to get x coordinate from time first
+            if (point.time) {
+                const timeCoord = timeScale.timeToCoordinate(point.time);
+                if (timeCoord !== null) {
+                    this._point.x = timeCoord;
+                } else {
+                    // Time is outside visible range - calculate position based on logical range
+                    const visibleRange = timeScale.getVisibleLogicalRange();
+                    if (visibleRange && point.logical !== undefined) {
+                        this._point.x = timeScale.logicalToCoordinate(point.logical);
+                    } else {
+                        // Fallback: try to find the bar index from data
+                        this._point.x = null;
+                    }
+                }
+            } else if (point.logical !== undefined) {
+                this._point.x = timeScale.logicalToCoordinate(point.logical);
+            } else {
+                this._point.x = null;
+            }
+
             this._point.y = series.priceToCoordinate(point.price);
         }
 

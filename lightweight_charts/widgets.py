@@ -37,15 +37,15 @@ if QWebEngineView:
                  if "Chart Created true" in message:
                       pass
                       
-                 # Map JS levels: 0=Info, 1=Warning, 2=Error
-                 if level == 0:
-                     logger.info(f"[JS] {message} (Line {lineNumber})")
-                 elif level == 1:
-                     logger.warning(f"[JS] {message} (Line {lineNumber})")
-                 elif level == 2:
-                     logger.error(f"[JS] {message} (Line {lineNumber})")
-                 else:
-                     logger.debug(f"[JS] {message} (Line {lineNumber})")
+                #  # Map JS levels: 0=Info, 1=Warning, 2=Error
+                #  if level == 0:
+                #      logger.info(f"[JS] {message} (Line {lineNumber})")
+                #  elif level == 1:
+                #      logger.warning(f"[JS] {message} (Line {lineNumber})")
+                #  elif level == 2:
+                #      logger.error(f"[JS] {message} (Line {lineNumber})")
+                #  else:
+                #      logger.debug(f"[JS] {message} (Line {lineNumber})")
     except ImportError:
          pass
          

@@ -562,6 +562,9 @@ class QtSplitChart(QObject):
                                 }
                                 
                                 try {
+                                    // Check if both charts have series (skip if target is empty/hidden)
+                                    if (!source.series || !target.series) return;
+
                                     // Get the actual price from SOURCE chart at the cursor position
                                     // This ensures same-symbol charts show identical prices in both price axes
                                     var sourcePrice = source.series.coordinateToPrice(param.point.y);

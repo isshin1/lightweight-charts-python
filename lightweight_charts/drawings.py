@@ -264,6 +264,86 @@ class TrendLine(TwoPointDrawing):
             func
         )
 
+
+class ArrowUpMarker(Drawing):
+    """Arrow up marker at a single point (uses toolbox ArrowUpMarker)."""
+    def __init__(
+        self,
+        chart,
+        time: TIME,
+        price: NUM,
+        color: str = '#2ecc71',
+        size: int = 20,
+    ):
+        super().__init__(chart)
+        # Create the marker and attach it to the chart's candlestick series
+        self.run_script(f'''
+        (function() {{
+            var marker = new Lib.ArrowUpMarker(
+                {make_js_point(self.chart, time, price)},
+                {{
+                    arrowColor: '{color}',
+                    arrowSize: {size},
+                }}
+            );
+            window['{self.id.replace("window.", "")}'] = marker;
+            
+            // Find the series to attach to - try multiple approaches
+            var series = null;
+            if ({chart.id}.series && {chart.id}.series.attachPrimitive) {{
+                series = {chart.id}.series;
+            }} else if ({chart.id}.candlestick && {chart.id}.candlestick.series) {{
+                series = {chart.id}.candlestick.series;
+            }}
+            
+            if (series && series.attachPrimitive) {{
+                series.attachPrimitive(marker);
+            }} else {{
+                console.warn('[ArrowUpMarker] Could not find series to attach');
+            }}
+        }})();
+        ''')
+
+
+class ArrowDownMarker(Drawing):
+    """Arrow down marker at a single point (uses toolbox ArrowDownMarker)."""
+    def __init__(
+        self,
+        chart,
+        time: TIME,
+        price: NUM,
+        color: str = '#e74c3c',
+        size: int = 20,
+    ):
+        super().__init__(chart)
+        # Create the marker and attach it to the chart's candlestick series
+        self.run_script(f'''
+        (function() {{
+            var marker = new Lib.ArrowDownMarker(
+                {make_js_point(self.chart, time, price)},
+                {{
+                    arrowColor: '{color}',
+                    arrowSize: {size},
+                }}
+            );
+            window['{self.id.replace("window.", "")}'] = marker;
+            
+            // Find the series to attach to - try multiple approaches
+            var series = null;
+            if ({chart.id}.series && {chart.id}.series.attachPrimitive) {{
+                series = {chart.id}.series;
+            }} else if ({chart.id}.candlestick && {chart.id}.candlestick.series) {{
+                series = {chart.id}.candlestick.series;
+            }}
+            
+            if (series && series.attachPrimitive) {{
+                series.attachPrimitive(marker);
+            }} else {{
+                console.warn('[ArrowDownMarker] Could not find series to attach');
+            }}
+        }})();
+        ''')
+
 # TODO reimplement/fix
 class VerticalSpan(Pane):
     def __init__(self, series: 'SeriesCommon', start_time: Union[TIME, tuple, list], end_time: Optional[TIME] = None,
