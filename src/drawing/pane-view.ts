@@ -48,19 +48,25 @@ export abstract class TwoPointDrawingPaneView extends DrawingPaneView {
 
     _getX(p: Point): Coordinate | null {
         const timeScale = this._source.chart.timeScale();
-        if (p.time) {
-            // Priority: Attempt to recalculate logical from time (this fixes timeframe changes)
-            const newLogical = Drawing._getExtrapolatedLogical(p.time, this._source.series, this._source.chart);
-            if (newLogical !== null) {
-                // Return coordinate for the recalculated logical position
-                return timeScale.logicalToCoordinate(newLogical);
-            }
 
-            // Fallback: use existing time -> coordinate logic (though _getExtrapolatedLogical covers most)
-            const coord = timeScale.timeToCoordinate(p.time);
+        // Fast path: Try using stored logical index first (most common case during drag)
+        if (p.logical !== null && p.logical !== undefined) {
+            const coord = timeScale.logicalToCoordinate(p.logical);
             if (coord !== null) return coord;
         }
-        // Final fallback: use stored logical index (may be stale across timeframes, but prevents disappearance)
-        return timeScale.logicalToCoordinate(p.logical);
+
+        // Slower path: Recalculate from time (needed for timeframe changes)
+        if (p.time) {
+            const coord = timeScale.timeToCoordinate(p.time);
+            if (coord !== null) return coord;
+
+            // Last resort: expensive extrapolation
+            const newLogical = Drawing._getExtrapolatedLogical(p.time, this._source.series, this._source.chart);
+            if (newLogical !== null) {
+                return timeScale.logicalToCoordinate(newLogical);
+            }
+        }
+
+        return null;
     }
 }

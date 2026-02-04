@@ -541,7 +541,6 @@ export class ToolBox {
     registerForSync(symbol: string): void {
         this._currentSymbol = symbol;
         drawingSyncManager.registerChart(this._handlerID, symbol, this);
-        console.log(`[ToolBox] Registered chart ${this._handlerID} for sync with symbol ${symbol}`);
     }
 
     /**
@@ -550,7 +549,6 @@ export class ToolBox {
     unregisterFromSync(): void {
         drawingSyncManager.unregisterChart(this._handlerID);
         this._currentSymbol = '';
-        console.log(`[ToolBox] Unregistered chart ${this._handlerID} from sync`);
     }
 
     /**
@@ -560,7 +558,6 @@ export class ToolBox {
         if (this._currentSymbol !== symbol) {
             this._currentSymbol = symbol;
             drawingSyncManager.updateSymbol(this._handlerID, symbol);
-            console.log(`[ToolBox] Updated chart ${this._handlerID} symbol to ${symbol}`);
         }
     }
 

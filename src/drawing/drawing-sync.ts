@@ -37,7 +37,7 @@ export class DrawingSyncManager {
     private _syncInProgress: Set<string> = new Set();
 
     private constructor() {
-        console.log('[DrawingSyncManager] Initialized');
+        // Drawing sync initialized
     }
 
     static getInstance(): DrawingSyncManager {
@@ -51,7 +51,6 @@ export class DrawingSyncManager {
      * Register a chart for drawing synchronization.
      */
     registerChart(handlerID: string, symbol: string, toolbox: any): void {
-        console.log(`[DrawingSyncManager] Registering chart ${handlerID} with symbol ${symbol}`);
         this._charts.set(handlerID, {
             handlerID,
             symbol,
@@ -64,7 +63,6 @@ export class DrawingSyncManager {
      * Unregister a chart (e.g., when closing a split).
      */
     unregisterChart(handlerID: string): void {
-        console.log(`[DrawingSyncManager] Unregistering chart ${handlerID}`);
         this._charts.delete(handlerID);
     }
 
@@ -74,7 +72,6 @@ export class DrawingSyncManager {
     updateSymbol(handlerID: string, newSymbol: string): void {
         const chart = this._charts.get(handlerID);
         if (chart) {
-            console.log(`[DrawingSyncManager] Updated chart ${handlerID} symbol: ${chart.symbol} -> ${newSymbol}`);
             chart.symbol = newSymbol;
         }
     }
@@ -113,8 +110,6 @@ export class DrawingSyncManager {
             return;
         }
 
-        console.log(`[DrawingSyncManager] Syncing ${symbol} from ${sourceHandlerID} to ${targetCharts.length} chart(s)`);
-
         // Get current drawings from source chart
         const sourceDrawings = this._serializeDrawings(sourceChart.drawingTool.drawings);
 
@@ -123,7 +118,6 @@ export class DrawingSyncManager {
             for (const targetChart of targetCharts) {
                 // Prevent sync loops
                 if (this._syncInProgress.has(targetChart.handlerID)) {
-                    console.log(`[DrawingSyncManager] Skipping ${targetChart.handlerID} (sync in progress)`);
                     continue;
                 }
 
@@ -196,8 +190,6 @@ export class DrawingSyncManager {
                     chart.drawingTool.addNewDrawing(newDrawing);
                 }
             }
-
-            console.log(`[DrawingSyncManager] Applied ${drawings.length} drawings to ${chart.handlerID}`);
         } catch (e) {
             console.error(`[DrawingSyncManager] Error applying drawings to ${chart.handlerID}:`, e);
         } finally {
@@ -218,8 +210,6 @@ export class DrawingSyncManager {
             console.warn(`[DrawingSyncManager] Chart ${handlerID} not found for loading`);
             return;
         }
-
-        console.log(`[DrawingSyncManager] Loading ${drawings.length} drawings for chart ${handlerID}`);
 
         // Apply to specified chart
         this._applyDrawingsToChart(chart, drawings);

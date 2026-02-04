@@ -9,3 +9,6 @@ export * from './context-menu/width-picker';
 
 // New consolidated drawings module
 export * from './drawings';
+
+// Countdown timer for async price label updates
+export * from './countdown-timer';

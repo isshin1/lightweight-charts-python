@@ -151,7 +151,7 @@ export abstract class Drawing extends PluginBase {
                 let lastKnownIndex: number | null = null;
                 let lastKnownTime: any = null;
                 // Search backwards for the last loaded bar
-                for (let i = 1; i < 2000; i++) {
+                for (let i = 1; i < 500; i++) {
                     const idx = (logical - i) as Logical;
                     const d = series.dataByIndex(idx);
                     if (d) {
@@ -193,13 +193,11 @@ export abstract class Drawing extends PluginBase {
 
         // Direct lookup worked - use it
         if (logical !== null) {
-            console.log('[DrawingSync] _getExtrapolatedLogical: time=' + time + ', date=' + new Date(time * 1000).toISOString() + ', direct=' + logical);
             return logical;
         }
 
         // Direct lookup failed (e.g., 3min timestamp on 15min chart)
         // Binary search through the data to find the bar that contains this time
-        console.log('[DrawingSync] _getExtrapolatedLogical: time=' + time + ', date=' + new Date(time * 1000).toISOString() + ', coord=null, using binary search');
 
         // First, find the bounds of loaded data
         const rightEdgeLogical = timeScale.coordinateToLogical(chart.timeScale().width());
@@ -210,7 +208,7 @@ export abstract class Drawing extends PluginBase {
         let lastIdx: number | null = null;
 
         // Search from right edge for last loaded bar
-        for (let i = 0; i < 5000; i++) {
+        for (let i = 0; i < 500; i++) {
             const idx = (rightEdgeLogical - i) as Logical;
             const d = series.dataByIndex(idx);
             if (d) {
@@ -219,9 +217,9 @@ export abstract class Drawing extends PluginBase {
             }
         }
 
-        // Search for first loaded bar (go back up to 5000 bars from last)
+        // Search for first loaded bar (go back up to 500 bars from last)
         if (lastIdx !== null) {
-            for (let i = lastIdx; i >= lastIdx - 5000 && i >= 0; i--) {
+            for (let i = lastIdx; i >= lastIdx - 500 && i >= 0; i--) {
                 const d = series.dataByIndex(i as Logical);
                 if (d) {
                     firstIdx = i;
@@ -232,7 +230,6 @@ export abstract class Drawing extends PluginBase {
         }
 
         if (firstIdx === null || lastIdx === null) {
-            console.log('[DrawingSync] _getExtrapolatedLogical: no data found');
             return null;
         }
 
@@ -251,7 +248,6 @@ export abstract class Drawing extends PluginBase {
             }
 
             if (d.time === time) {
-                console.log('[DrawingSync] _getExtrapolatedLogical: binary search found exact match at ' + mid);
                 return mid as Logical;
             } else if (d.time < time) {
                 // Target time is after this bar, search right
@@ -265,9 +261,6 @@ export abstract class Drawing extends PluginBase {
         // Binary search completed, 'left' is the insertion point
         // Return the bar just before or at the target time
         const resultIdx = Math.max(firstIdx, left - 1);
-        const resultBar = series.dataByIndex(resultIdx as Logical);
-        console.log('[DrawingSync] _getExtrapolatedLogical: binary search result=' + resultIdx +
-            ', barTime=' + (resultBar ? new Date((resultBar.time as number) * 1000).toISOString() : 'null'));
 
         return resultIdx as Logical;
     }
@@ -307,7 +300,6 @@ export abstract class Drawing extends PluginBase {
 
     protected _handleMouseDownInteraction = (event: MouseEvent) => {
         // Only allow left click (button 0) for dragging/interaction
-        console.log('MouseDown Interaction:', { button: event.button, type: event.type, buttons: event.buttons });
         if (event.button !== 0) return;
 
         // if (Drawing._mouseIsDown) return;

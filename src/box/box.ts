@@ -16,8 +16,9 @@ export interface BoxOptions extends DrawingOptions {
 
 const defaultBoxOptions = {
     fillEnabled: true,
-    fillColor: 'rgba(255, 255, 255, 0.2)',
-    ...defaultOptions
+    fillColor: 'rgba(194, 239, 245, 0.5)',  // #C2EFF5 with 50% opacity
+    ...defaultOptions,
+    lineColor: 'transparent',  // No border
 }
 
 

@@ -30,24 +30,32 @@ except ImportError:
             QWebEngineView = None
 
 if QWebEngineView:
+    # Import QWebEnginePage from the same Qt library as QWebEngineView
+    QWebEnginePage = None
     try:
-        from PyQt6.QtWebEngineCore import QWebEnginePage
-        class ConsoleLoggingPage(QWebEnginePage):
-             def javaScriptConsoleMessage(self, level, message, lineNumber, sourceID):
-                 if "Chart Created true" in message:
-                      pass
-                      
-                #  # Map JS levels: 0=Info, 1=Warning, 2=Error
-                #  if level == 0:
-                #      logger.info(f"[JS] {message} (Line {lineNumber})")
-                #  elif level == 1:
-                #      logger.warning(f"[JS] {message} (Line {lineNumber})")
-                #  elif level == 2:
-                #      logger.error(f"[JS] {message} (Line {lineNumber})")
-                #  else:
-                #      logger.debug(f"[JS] {message} (Line {lineNumber})")
+        from PyQt5.QtWebEngineWidgets import QWebEnginePage
     except ImportError:
-         pass
+        try:
+            from PySide6.QtWebEngineCore import QWebEnginePage
+        except ImportError:
+            try:
+                from PyQt6.QtWebEngineCore import QWebEnginePage
+            except ImportError:
+                pass
+    
+    if QWebEnginePage:
+        import logging
+        _console_logger = logging.getLogger("lightweight_charts")
+        
+        class ConsoleLoggingPage(QWebEnginePage):
+            def javaScriptConsoleMessage(self, level, message, lineNumber, sourceID):
+                # Log DEBUG, QtSplitChart messages, and errors
+                if "[DEBUG]" in message or "DEBUG" in message:
+                    _console_logger.info(f"[JS] {message}")
+                elif "[QtSplitChart]" in message:
+                    _console_logger.info(f"[JS] {message}")
+                elif level == 2:  # Error level
+                    _console_logger.error(f"[JS:ERROR] {message} (Line {lineNumber})")
          
     class Bridge(QObject):
         def __init__(self, chart):

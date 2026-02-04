@@ -291,13 +291,84 @@
         }
     });
 
+    /**
+     * Auto-initialize context menu for a newly created chart handler.
+     * Called when chartCreated event is received from TypeScript Handler.
+     * @param {Object} handler - The chart handler object with id and wrapper
+     */
+    function autoInitForHandler(handler) {
+        if (!handler || !handler.wrapper) {
+            console.warn('[ChartContextMenu] Handler or wrapper not ready for auto-init');
+            return;
+        }
+
+        injectStyles();
+
+        // Determine grid position from handler index in allChartHandlers
+        const allHandlers = window.allChartHandlers || [];
+        const idx = allHandlers.indexOf(handler);
+        const row = Math.floor(idx / 2);
+        const col = idx % 2;
+
+        // Setup click handler for focus tracking (updates blue border)
+        const wrapper = handler.wrapper;
+        if (!wrapper._focusClickHandler) {
+            wrapper._focusClickHandler = function (e) {
+                console.log('[ChartContextMenu] Click detected on chart index ' + idx);
+                if (window.pythonObject) {
+                    window.pythonObject.callback('on_active_chart_~_' + idx);
+                }
+            };
+            wrapper.addEventListener('mousedown', wrapper._focusClickHandler, true);
+            console.log('[ChartContextMenu] Focus click handler installed for chart ' + idx);
+        }
+
+        // Create callbacks that use pythonObject for Python communication
+        const callbacks = {
+            onSplitRight: function () {
+                console.log('[ChartContextMenu] Split Right from [' + row + ',' + col + ']');
+                if (window.pythonObject) {
+                    window.pythonObject.callback('on_context_split_~_' + row + '_' + col + '_right');
+                }
+            },
+            onSplitDown: function () {
+                console.log('[ChartContextMenu] Split Down from [' + row + ',' + col + ']');
+                if (window.pythonObject) {
+                    window.pythonObject.callback('on_context_split_~_' + row + '_' + col + '_down');
+                }
+            },
+            onClose: function () {
+                if (row === 0 && col === 0) {
+                    // Primary chart cannot be closed
+                    return;
+                }
+                console.log('[ChartContextMenu] Close chart at [' + row + ',' + col + ']');
+                if (window.pythonObject) {
+                    window.pythonObject.callback('on_context_close_~_' + row + '_' + col);
+                }
+            }
+        };
+
+        // Initialize context menu for this handler
+        initChartContextMenu(handler, callbacks, row, col);
+        console.log('[ChartContextMenu] Auto-initialized for handler', handler.id, 'at [' + row + ',' + col + ']');
+    }
+
+    // Listen for chart creation events from TypeScript Handler
+    document.addEventListener('chartCreated', function (e) {
+        const { chartId, handler } = e.detail;
+        console.log('[ChartContextMenu] Received chartCreated event for', chartId);
+        autoInitForHandler(handler);
+    });
+
     // Expose globally
     window.ChartContextMenu = {
         init: initChartContextMenu,
         hide: hideMenu,
-        getSplitAvailability
+        getSplitAvailability,
+        autoInitForHandler
     };
 
-    console.log('[ChartContextMenu] Module loaded');
+    console.log('[ChartContextMenu] Module loaded with event listener');
 })();
 

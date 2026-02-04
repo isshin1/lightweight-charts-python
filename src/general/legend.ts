@@ -190,7 +190,23 @@ export class Legend {
         if (!this.ohlcEnabled && !this.linesEnabled && !this.percentEnabled) return;
         const options: any = this.handler.series.options()
 
-        if (!param.time) {
+        // [FIX] If param.time is null but we have a valid logical index, try to get time from series data
+        let effectiveTime = param.time;
+        let dataFromLogical: any = null;
+
+        if (!param.time && param.logical !== null && param.logical !== undefined) {
+            // Try to get data directly from the series at this logical index
+            try {
+                dataFromLogical = this.handler.series.dataByIndex(param.logical as unknown as number);
+                if (dataFromLogical && dataFromLogical.time) {
+                    effectiveTime = dataFromLogical.time;
+                }
+            } catch (e) {
+                // Fallback failed, effectiveTime stays null
+            }
+        }
+
+        if (!effectiveTime) {
             // [FIX] Use opacity:0 instead of visibility:hidden or color:transparent
             // This hides the content while preserving the element's height/layout
             // so that extension items don't shift when cursor moves off chart
@@ -206,14 +222,15 @@ export class Legend {
 
         if (usingPoint) {
             const timeScale = this.handler.chart.timeScale();
-            let coordinate = timeScale.timeToCoordinate(param.time)
+            let coordinate = timeScale.timeToCoordinate(effectiveTime)
             if (coordinate)
                 logical = timeScale.coordinateToLogical(coordinate.valueOf())
             if (logical)
                 data = this.handler.series.dataByIndex(logical.valueOf())
         }
         else {
-            data = param.seriesData.get(this.handler.series);
+            // Use data from param.seriesData if available, otherwise use the data we fetched from logical index
+            data = param.seriesData.get(this.handler.series) || dataFromLogical;
         }
 
         this.candle.style.color = ''
@@ -274,27 +291,8 @@ export class Legend {
                 data = param.seriesData.get(e.series) as LineData
             }
 
-            // If no data at crosshair position, fall back to latest data point
-            if (!data?.value) {
-                try {
-                    // Get the last data point from the series
-                    const lastIndex = this.handler.chart.timeScale().getVisibleLogicalRange();
-                    if (lastIndex) {
-                        // Try to get last known data by searching backwards from visible range end
-                        for (let i = 0; i < 100; i++) {
-                            const idx = Math.floor(lastIndex.to - i) as Logical;
-                            const d = e.series.dataByIndex(idx) as LineData;
-                            if (d?.value) {
-                                data = d;
-                                break;
-                            }
-                        }
-                    }
-                } catch (e) {
-                    // Silently ignore errors getting fallback data
-                }
-            }
-
+            // If no data at crosshair position, skip this indicator
+            // (previously had a 100-iteration fallback loop that caused performance issues)
             if (!data?.value) return;
 
             let price;

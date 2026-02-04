@@ -33,25 +33,16 @@ export class DrawingTool {
 
         document.addEventListener('keydown', (e) => {
             if (e.key === 'Shift') {
-                console.log('Shift keydown');
                 this._shiftPressed = true;
             }
         });
         document.addEventListener('keyup', (e) => {
             if (e.key === 'Shift') {
-                console.log('Shift keyup');
                 this._shiftPressed = false;
             }
         });
         document.addEventListener('pointerdown', (e) => {
-            console.log('pointerdown', {
-                button: e.button,
-                isDrawing: this._isDrawing,
-                shiftPressed: this._shiftPressed,
-                hasLastParam: !!this._lastCrosshairParam
-            });
             if (e.button === 0 && this._isDrawing && this._shiftPressed && this._lastCrosshairParam) {
-                console.log('Triggering manual onClick');
                 this._onClick(this._lastCrosshairParam);
                 e.preventDefault();
                 e.stopPropagation();

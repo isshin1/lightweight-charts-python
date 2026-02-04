@@ -39,6 +39,7 @@ class Window:
         self.scripts = []
         self.final_scripts = []
         self.bulk_run = BulkRunScript(script_func)
+        self.on_js_load_callbacks = []  # Callbacks to run after JS is loaded
 
         if run_script:
             self.run_script = run_script
@@ -69,6 +70,14 @@ class Window:
         for script in self.scripts:
             initial_script += f'\n{script}'
         self.script_func(initial_script)
+        
+        # Fire registered callbacks after JS is loaded
+        for callback in self.on_js_load_callbacks:
+            try:
+                callback()
+            except Exception as e:
+                logger.error(f"Error in on_js_load callback: {e}")
+        self.on_js_load_callbacks.clear()
 
     def run_script(self, script: str, run_last: bool = False):
         """
@@ -1225,6 +1234,36 @@ class AbstractChart(Candlestick, Pane):
                 }}
                 
                 legend._customItems['{name}'] = {{ row: row, visible: visible }};
+            }})();
+        ''')
+
+    def remove_legend_item(self, name: str):
+        """
+        Remove a custom legend item by name.
+        
+        Used for drawing-based indicators (MSP, Day H/L, Swing) when toggling them
+        OFF via the indicator dropdown. Removes the DOM element and cleans up state.
+        
+        Args:
+            name: Display name of the legend item to remove (e.g., "MSP", "Day H/L")
+        """
+        callback_id = f'legend_toggle_{name.replace(" ", "_").lower()}_{self.id}'
+        
+        # Unregister Python callback
+        if callback_id in self.win.handlers:
+            del self.win.handlers[callback_id]
+        
+        # Remove from DOM and _customItems
+        self.run_script(f'''
+            (function() {{
+                const legend = {self.id}.legend;
+                if (!legend || !legend._customItems) return;
+                
+                const item = legend._customItems['{name}'];
+                if (item && item.row && item.row.parentNode) {{
+                    item.row.parentNode.removeChild(item.row);
+                }}
+                delete legend._customItems['{name}'];
             }})();
         ''')
 

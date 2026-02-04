@@ -110,6 +110,7 @@ class QtSplitChart(QObject):
         
         self._active_index = 0
         self._is_loaded = False
+        self._sync_enabled = True  # Crosshair sync between split charts
         self._current_view_mode = 'single'  # 'single', 'split', 'split_down', 'grid'
         
         # Pre-created charts list (4 charts for 2x2 grid)
@@ -172,8 +173,8 @@ class QtSplitChart(QObject):
             width=0.5,  # Half width
             height=1.0,
             toolbox=self._toolbox,
-            sync=False,
-            sync_crosshairs_only=False
+            sync=True,
+            sync_crosshairs_only=True
         )
         self._charts.append(sub1)
         self._charts_data[1] = {'obj': sub1, 'df': None, 'symbol': None}
@@ -186,8 +187,8 @@ class QtSplitChart(QObject):
             width=1.0,  # Full width
             height=0.5,  # Half height
             toolbox=self._toolbox,
-            sync=False,
-            sync_crosshairs_only=False
+            sync=True,
+            sync_crosshairs_only=True
         )
         self._charts.append(sub2)
         self._charts_data[2] = {'obj': sub2, 'df': None, 'symbol': None}
@@ -200,8 +201,8 @@ class QtSplitChart(QObject):
             width=0.5,
             height=0.5,
             toolbox=self._toolbox,
-            sync=False,
-            sync_crosshairs_only=False
+            sync=True,
+            sync_crosshairs_only=True
         )
         self._charts.append(sub3)
         self._charts_data[3] = {'obj': sub3, 'df': None, 'symbol': None}
@@ -467,15 +468,18 @@ class QtSplitChart(QObject):
         self._is_loaded = True
         logger.debug("[QtSplitChart] Injecting JS handlers (Final Production)...")
         
+        # Get all 4 chart IDs
         chart0_id = self._charts_data[0]['obj'].id
         chart1_id = self._charts_data[1]['obj'].id
+        chart2_id = self._charts_data[2]['obj'].id
+        chart3_id = self._charts_data[3]['obj'].id
         
         # Use simple string formatting to avoid f-string brace escaping hell
         script = """
-            console.log("[QtSplitChart: %s] Pre-IIFE Check - Script injected");
+            console.log("[QtSplitChart] Pre-IIFE Check - Script injected");
             try {
                 (function() {
-                    console.log("[QtSplitChart: %s] Script starting...");
+                    console.log("[QtSplitChart] Script starting...");
                     
                     function setupClickCapture(chartObj, indexStr) {
                         if (!chartObj) return;
@@ -522,81 +526,127 @@ class QtSplitChart(QObject):
                 
                 function init() {
                     try {
-                        console.log("[QtSplitChart: %s] init() called, looking for charts: %s, %s");
-                        var c0 = %s;
-                        var c1 = %s;
+                        console.log("[QtSplitChart] init() called, looking for all 4 charts...");
+                        var charts = [%s, %s, %s, %s];
                         
-                        console.log("[QtSplitChart: %s] c0 found:", !!c0, "c0.chart:", !!(c0 && c0.chart));
-                        console.log("[QtSplitChart: %s] c1 found:", !!c1, "c1.chart:", !!(c1 && c1.chart));
+                        // Wait for at least charts 0 and 1 to be ready
+                        var c0 = charts[0];
+                        var c1 = charts[1];
+                        
+                        console.log("[QtSplitChart] c0 found:", !!c0, "c0.chart:", !!(c0 && c0.chart));
+                        console.log("[QtSplitChart] c1 found:", !!c1, "c1.chart:", !!(c1 && c1.chart));
                         
                         if (!c0 || !c0.chart || !c1 || !c1.chart) {
-                            console.log("[QtSplitChart: %s] Charts not ready, retrying in 500ms...");
+                            console.log("[QtSplitChart] Charts not ready, retrying in 500ms...");
                             setTimeout(init, 500);
                             return;
                         }
                         
-                        setupClickCapture(c0, '0');
-                        setupClickCapture(c1, '1');
-                        
-                        
-                        // Custom crosshair sync using Coordinate Mapping
-                        // This works even for different price scales (Futures vs Options)
-                        // by mapping the Y-pixel position to the target price scale.
-                        
-                        var activeChart = null;
-                        
-                        if (c0.wrapper) {
-                            c0.wrapper.addEventListener('mouseenter', function() { activeChart = c0; });
-                        }
-                        if (c1.wrapper) {
-                            c1.wrapper.addEventListener('mouseenter', function() { activeChart = c1; });
+                        // Setup click capture for all 4 charts
+                        for (var i = 0; i < charts.length; i++) {
+                            if (charts[i]) {
+                                setupClickCapture(charts[i], '' + i);
+                            }
                         }
                         
-                        function syncCrosshair(source, target) {
-                            source.chart.subscribeCrosshairMove(function(param) {
-                                if (activeChart !== source) return;
+                        
+                        // Crosshair Sync - Use native Lib.Handler.syncCharts
+                        // This is the SAME function that works for regular SubCharts
+                        
+                        if (window.crosshairSyncEnabled === undefined) {
+                            window.crosshairSyncEnabled = true;
+                        }
+                        
+                        // Store sync subscriptions so we can toggle them
+                        window._syncSubscriptions = [];
+                        
+                        // Function to setup sync between two charts
+                        function setupNativeSync(chartA, chartB) {
+                            if (!chartA || !chartB || !chartA.chart || !chartB.chart) {
+                                console.log("[QtSplitChart] Cannot sync - charts not ready");
+                                return;
+                            }
+                            
+                            // Call native syncCharts function from the library
+                            if (Lib && Lib.Handler && Lib.Handler.syncCharts) {
+                                console.log("[QtSplitChart] Calling native Lib.Handler.syncCharts");
+                                Lib.Handler.syncCharts(chartA, chartB, true);  // crosshairOnly=true
+                            } else {
+                                console.log("[QtSplitChart] Lib.Handler.syncCharts not available, using fallback");
                                 
-                                if (!param || !param.time || !param.point) {
-                                    target.chart.clearCrosshairPosition();
-                                    return;
-                                }
-                                
-                                try {
-                                    // Check if both charts have series (skip if target is empty/hidden)
-                                    if (!source.series || !target.series) return;
-
-                                    // Get the actual price from SOURCE chart at the cursor position
-                                    // This ensures same-symbol charts show identical prices in both price axes
-                                    var sourcePrice = source.series.coordinateToPrice(param.point.y);
-                                    if (sourcePrice !== null) {
-                                        // Pass the actual price value to target chart
-                                        // Target chart will display this same price on its axis
-                                        target.chart.setCrosshairPosition(sourcePrice, param.time, target.series);
+                                // Fallback: manual sync implementation matching native pattern
+                                function crosshairHandler(chart, point) {
+                                    if (!point) {
+                                        chart.chart.clearCrosshairPosition();
+                                        return;
                                     }
-                                } catch(e) {
-                                    console.log("[QtSplitChart] Sync error: " + e);
+                                    chart.chart.setCrosshairPosition(point.value || point.close, point.time, chart.series);
                                 }
-                            });
+                                
+                                function getPoint(series, param) {
+                                    if (!param.time) return null;
+                                    return param.seriesData.get(series) || null;
+                                }
+                                
+                                var selected = chartA;
+                                
+                                var setACrosshair = function(param) {
+                                    if (!window.crosshairSyncEnabled) return;
+                                    crosshairHandler(chartA, getPoint(chartB.series, param));
+                                };
+                                var setBCrosshair = function(param) {
+                                    if (!window.crosshairSyncEnabled) return;
+                                    crosshairHandler(chartB, getPoint(chartA.series, param));
+                                };
+                                
+                                // Start with A active
+                                chartA.chart.subscribeCrosshairMove(setBCrosshair);
+                                
+                                chartA.wrapper.addEventListener('mouseover', function() {
+                                    if (selected === chartA) return;
+                                    selected = chartA;
+                                    chartB.chart.unsubscribeCrosshairMove(setACrosshair);
+                                    chartA.chart.subscribeCrosshairMove(setBCrosshair);
+                                    console.log("[QtSplitChart] Switched to chart A");
+                                });
+                                
+                                chartB.wrapper.addEventListener('mouseover', function() {
+                                    if (selected === chartB) return;
+                                    selected = chartB;
+                                    chartA.chart.unsubscribeCrosshairMove(setBCrosshair);
+                                    chartB.chart.subscribeCrosshairMove(setACrosshair);
+                                    console.log("[QtSplitChart] Switched to chart B");
+                                });
+                            }
                         }
                         
-                        syncCrosshair(c0, c1);
-                        syncCrosshair(c1, c0);
+                        // Get visible charts (charts 0 and 1 are typically visible after split)
+                        var c0 = charts[0];
+                        var c1 = charts[1];
                         
-                        console.log("[QtSplitChart: %s] Custom Coordinate Sync installed");
-                        console.log("[QtSplitChart: %s] Init complete");
+                        // Setup sync between chart 0 and chart 1
+                        if (c0 && c1 && c0.wrapper && c1.wrapper) {
+                            setupNativeSync(c0, c1);
+                            console.log("[QtSplitChart] Sync setup between charts 0 and 1");
+                        } else {
+                            console.log("[QtSplitChart] Charts not ready for sync yet");
+                        }
+                        
+                        console.log("[QtSplitChart] Sync setup complete");
+                        console.log("[QtSplitChart] Init complete");
                         
                         if (window.pythonObject) {
                             window.pythonObject.callback('on_chart_ready');
                         }
                     } catch(e) {
-                        console.log("[QtSplitChart: %s] Init error: " + e);
+                        console.log("[QtSplitChart] Init error: " + e);
                     }
                 }
                 
                 init();
             })();
             } catch(e) { console.log("Global Script execution error: " + e); }
-        """ % (chart0_id, chart0_id, chart0_id, chart0_id, chart1_id, chart0_id, chart1_id, chart0_id, chart0_id, chart0_id, chart0_id, chart0_id, chart0_id)
+        """ % (chart0_id, chart1_id, chart2_id, chart3_id)
         
         # Note: split_resizer.js is now loaded via index.html to ensure it's available
         # before any Python-injected scripts run
@@ -611,16 +661,23 @@ class QtSplitChart(QObject):
         QTimer.singleShot(500, lambda: self.set_view_mode(self._current_view_mode))
         
     def _inject_context_menu_handlers(self):
-        """Inject context menu for split/close actions using chart_context_menu.js."""
+        """Register Python handlers for context menu actions.
+        
+        Note: Context menus are now auto-initialized in JS via chartCreated event.
+        This method only registers the Python-side callback handlers.
+        """
         # Register Python handlers for context menu actions
         self._main_chart.win.handlers['on_context_split'] = self._on_context_split
         self._main_chart.win.handlers['on_context_close'] = self._on_context_close
-        
-        # Inject context menus for all active charts
-        self._reinject_context_menus()
+        logger.debug("[QtSplitChart] Registered Python context menu handlers")
         
     def _reinject_context_menus(self):
-        """Reinject context menus and click handlers for all visible charts."""
+        """Update visibility grid and layout mode for context menus.
+        
+        Note: Context menus are now auto-initialized in JS via chartCreated event.
+        This method only updates the grid state so context menus know which
+        split options are available.
+        """
         # Generate visibility grid from _visible_indices
         # Index mapping: 0=[0,0], 1=[0,1], 2=[1,0], 3=[1,1]
         visibility_grid = [[0, 0], [0, 0]]
@@ -629,94 +686,16 @@ class QtSplitChart(QObject):
             col = idx % 2
             visibility_grid[row][col] = 1
         
-        # Build JavaScript to initialize context menus AND click handlers for visible charts
-        script_parts = ["""
-            (function() {
-                if (!window.ChartContextMenu) {
-                    console.log("[QtSplitChart] ChartContextMenu module not loaded, skipping...");
-                    return;
-                }
-                
-                // Set current layout mode
-                window.chartLayoutMode = '%s';
-                
-                // Store VISIBILITY grid (not pre-created grid) for context menu logic
-                window.chartGrid = %s;
-                
-                // Click handler setup function
-                function setupClickCapture(chartObj, indexStr) {
-                    if (!chartObj || !chartObj.wrapper) return;
-                    
-                    var target = chartObj.wrapper;
-                    
-                    // Skip if already has our click handler
-                    if (target._qtSplitClickHandler) return;
-                    
-                    target._qtSplitClickHandler = function(e) {
-                        console.log("[QtSplitChart] Mousedown detected on chart " + indexStr);
-                        if (window.pythonObject) {
-                            window.pythonObject.callback('on_active_chart_~_' + indexStr);
-                        }
-                    };
-                    
-                    target.addEventListener('mousedown', target._qtSplitClickHandler, true);
-                    console.log("[QtSplitChart] Click capture installed for chart " + indexStr);
-                }
-                
-                function initMenus() {
-        """ % (self._current_view_mode, str(visibility_grid))]
-        
-        # Add init for each VISIBLE chart
-        for idx in self._visible_indices:
-            row = idx // 2
-            col = idx % 2
-            chart = self._charts[idx]
-            if chart:
-                chart_id = chart.id
-                is_primary = (idx == 0)
-                
-                script_parts.append(f"""
-                    // Chart at [{row},{col}] (index {idx})
-                    var chart_{row}_{col} = {chart_id};
-                    if (chart_{row}_{col} && chart_{row}_{col}.wrapper) {{
-                        // Install click capture for focus tracking
-                        setupClickCapture(chart_{row}_{col}, '{idx}');
-                        
-                        // Install context menu
-                        window.ChartContextMenu.init(chart_{row}_{col}, {{
-                            onSplitRight: function() {{
-                                console.log("[QtSplitChart] Split Right from [{row},{col}]");
-                                if (window.pythonObject) {{
-                                    window.pythonObject.callback('on_context_split_~_{row}_{col}_right');
-                                }}
-                            }},
-                            onSplitDown: function() {{
-                                console.log("[QtSplitChart] Split Down from [{row},{col}]");
-                                if (window.pythonObject) {{
-                                    window.pythonObject.callback('on_context_split_~_{row}_{col}_down');
-                                }}
-                            }},
-                            onClose: function() {{
-                                {'// Primary chart cannot be closed' if is_primary else f'''
-                                console.log("[QtSplitChart] Close chart at [{row},{col}]");
-                                if (window.pythonObject) {{
-                                    window.pythonObject.callback('on_context_close_~_{row}_{col}');
-                                }}'''}
-                            }}
-                        }}, {row}, {col});  // Pass grid position
-                    }}
-                """)
-        
-        script_parts.append("""
-                    console.log("[QtSplitChart] Context menus initialized for", window.chartGrid, "mode:", window.chartLayoutMode);
-                }
-                
-                setTimeout(initMenus, 100);
-            })();
-        """)
-        
-        full_script = "\n".join(script_parts)
-        self._main_chart.run_script(full_script)
+        # Update grid state in JavaScript for context menu split availability
+        script = f"""
+            (function() {{
+                window.chartLayoutMode = '{self._current_view_mode}';
+                window.chartGrid = {str(visibility_grid)};
+                console.log('[QtSplitChart] Updated grid state:', window.chartGrid, 'mode:', window.chartLayoutMode);
+            }})();
+        """
+        self._main_chart.run_script(script)
+        logger.debug(f"[QtSplitChart] Updated grid state: {visibility_grid}, mode: {self._current_view_mode}")
         
     def _on_context_split(self, params: str):
         """Handle split request from context menu.
@@ -765,6 +744,9 @@ class QtSplitChart(QObject):
                 return
         else:
             return
+        
+        # [FIX] Check if we're splitting from single BEFORE modifying visible_indices
+        is_from_single = len(self._visible_indices) == 1 and 0 in self._visible_indices
             
         # Add target to visible charts
         self._visible_indices.add(target_idx)
@@ -795,10 +777,10 @@ class QtSplitChart(QObject):
             # Default to grid for any other combination
             new_mode = 'grid'
         
-        logger.info(f"[QtSplitChart] Split: visible={self._visible_indices}, mode={new_mode}")
+        logger.info(f"[QtSplitChart] Split: visible={self._visible_indices}, mode={new_mode}, from_single={is_from_single}")
         
-        # Apply the layout and let mainwindow handle data loading
-        self.set_view_mode(new_mode)
+        # Apply the layout with range preservation if splitting from single
+        self.set_view_mode(new_mode, preserve_chart0_range=is_from_single)
         
         # Emit signal for mainwindow to load data into the new chart
         # Format: 'direction:target_idx' e.g. 'down:2' or 'right:1'
@@ -893,9 +875,14 @@ class QtSplitChart(QObject):
         # Format: 'close:mode:parent_idx:closed_idx' so consumers can clear closed chart data
         self.view_mode_changed.emit(f"close:{new_mode}:{parent_idx}:{idx}")
 
-    def set_view_mode(self, mode: str):
+    def set_view_mode(self, mode: str, preserve_chart0_range: bool = False):
         """
         Set view mode using resize() for all layout transitions.
+        
+        Args:
+            mode: View mode name
+            preserve_chart0_range: If True, save chart[0]'s visible range before resize 
+                                   and restore after. Used when splitting from single view.
         
         Supported modes:
         - single: Only chart[0] visible (1.0, 1.0)
@@ -919,7 +906,23 @@ class QtSplitChart(QObject):
         if not self._is_loaded:
             return
         
-        logger.info(f"[QtSplitChart] set_view_mode: {mode}")
+        # [FIX] Save chart[0]'s visible range when explicitly requested (on split)
+        chart0_id = self._charts[0].id if len(self._charts) > 0 else None
+        
+        logger.info(f"[QtSplitChart] set_view_mode: {mode} (preserve_range={preserve_chart0_range})")
+        
+        # Save if explicitly requested (when splitting from single to multi-chart)
+        if chart0_id and preserve_chart0_range:
+            self._main_chart.run_script(f"""
+                (function() {{
+                    var chart = {chart0_id};
+                    if (chart && chart.chart) {{
+                        window._savedVisibleRange = chart.chart.timeScale().getVisibleLogicalRange();
+                        window._savedRangeTimestamp = Date.now();
+                        console.log('[QtSplitChart] Saved visible range for split:', window._savedVisibleRange);
+                    }}
+                }})();
+            """)
         
         # Define resize dimensions AND positions for each mode
         # Format: {chart_idx: (width, height, left, top)}
@@ -1026,6 +1029,23 @@ class QtSplitChart(QObject):
         # Apply active border
         self._update_active_border()
         
+        # [FIX] Restore chart[0]'s visible range after resize to prevent candles jumping
+        # Only restore if preserve_chart0_range was requested
+        if chart0_id and preserve_chart0_range:
+            self._main_chart.run_script(f"""
+                (function() {{
+                    // Longer delay (400ms) to ensure all resize/sync operations complete
+                    setTimeout(function() {{
+                        var chart = {chart0_id};
+                        if (chart && chart.chart && window._savedVisibleRange) {{
+                            console.log('[QtSplitChart] Restoring visible range after split:', window._savedVisibleRange);
+                            chart.chart.timeScale().setVisibleLogicalRange(window._savedVisibleRange);
+                            window._savedVisibleRange = null;  // Clear after use
+                        }}
+                    }}, 400);
+                }})();
+            """)
+        
         # Emit ready signal
         self.ready.emit()
     
@@ -1063,8 +1083,12 @@ class QtSplitChart(QObject):
         
     def _on_chart_ready(self, *args):
         """Called from JS when charts are fully initialized."""
+        logger.info("[QtSplitChart] _on_chart_ready callback received - JS confirmed charts ready")
         # Force apply current view mode now that JS is ready
         self.set_view_mode(self._current_view_mode)
+        # [FIX] Explicitly reinject context menus after JS confirms readiness
+        # This ensures first tab gets context menus even if earlier injection was too early
+        QTimer.singleShot(200, self._reinject_context_menus)
 
 
     def _on_main_chart_click(self, chart, time, price):
@@ -1222,6 +1246,71 @@ class QtSplitChart(QObject):
         if 0.1 <= ratio <= 0.9:
             self._split_ratio = ratio
             # TODO: Implement resize via JS (requires chart.applyOptions)
+    
+    @property
+    def is_sync_enabled(self) -> bool:
+        """Get whether crosshair sync is enabled."""
+        return self._sync_enabled
+    
+    def set_sync(self, enabled: bool):
+        """
+        Enable or disable crosshair sync between split charts.
+        
+        Args:
+            enabled: True to enable sync, False to disable
+        """
+        self._sync_enabled = enabled
+        logger.debug(f"[QtSplitChart] Crosshair sync set to {enabled}")
+        
+        # Update JavaScript flag AND re-trigger native sync if enabling
+        if self._is_loaded and self._main_chart:
+            script = f"window.crosshairSyncEnabled = {'true' if enabled else 'false'};"
+            self._main_chart.run_script(script)
+            
+            # If enabling, re-trigger native sync between visible charts
+            if enabled:
+                self._trigger_native_sync()
+    
+    def _trigger_native_sync(self):
+        """
+        Explicitly call Lib.Handler.syncCharts between charts 0 and 1.
+        This re-triggers the native sync mechanism after data is loaded.
+        """
+        if not self._is_loaded or not self._main_chart:
+            return
+        
+        # Only sync if we have at least 2 charts
+        if len(self._charts) < 2:
+            return
+        
+        logger.debug(f"[QtSplitChart] Triggering native sync for charts 0 and 1")
+        
+        # Get chart IDs for charts 0 and 1
+        chart0_id = self._charts[0].id.replace('window.', '')
+        chart1_id = self._charts[1].id.replace('window.', '')
+        
+        # The native sync is bidirectional - each chart can sync to the other
+        sync_script = f'''
+            console.log("[QtSplitChart] Re-triggering native sync...");
+            (function() {{
+                var chart1 = window["{chart0_id}"];
+                var chart2 = window["{chart1_id}"];
+                
+                if (!chart1 || !chart2 || !chart1.wrapper || !chart2.wrapper) {{
+                    console.log("[QtSplitChart] Charts not ready for sync re-trigger");
+                    return;
+                }}
+                
+                console.log("[QtSplitChart] Calling Lib.Handler.syncCharts between", "{chart0_id}", "and", "{chart1_id}");
+                try {{
+                    Lib.Handler.syncCharts(chart1, chart2, true);  // crosshairOnly=true
+                    console.log("[QtSplitChart] Native sync re-triggered successfully!");
+                }} catch(e) {{
+                    console.error("[QtSplitChart] Sync error:", e);
+                }}
+            }})();
+        '''
+        self._main_chart.run_script(sync_script)
             
     def load_data(
         self, 

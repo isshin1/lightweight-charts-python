@@ -20,6 +20,7 @@ import { GlobalParams, globalParamInit } from "./global-params";
 import { Legend } from "./legend";
 import { ToolBox } from "./toolbox";
 import { TopBar } from "./topbar";
+import { registerChartForCountdown } from "../countdown-timer";
 
 
 export interface Scale {
@@ -90,6 +91,22 @@ export class Handler {
         this.series = this.createCandlestickSeries();
         this.volumeSeries = this.createVolumeSeries();
 
+        // Register for async countdown timer updates (updates every second independent of ticks)
+        try {
+            const chartInternal = this.chart as any;
+            const chartWidget = chartInternal._private__chartWidget;
+            if (chartWidget) {
+                const model = typeof chartWidget._internal_model === 'function'
+                    ? chartWidget._internal_model()
+                    : chartWidget._private__model;
+                if (model) {
+                    registerChartForCountdown(model);
+                }
+            }
+        } catch (e) {
+            console.error('[Handler] Failed to register for countdown timer:', e);
+        }
+
         this.legend = new Legend(this)
 
         // Initialize AlertPlugin if available (loaded from external JS file)
@@ -127,9 +144,26 @@ export class Handler {
             window.activeHandler = this;
         })
 
+        // [FIX] Auto-initialize context menu for this chart
+        // Emit event for chart_context_menu.js to handle
+        this._initContextMenu();
+
         this.reSize()
         if (!autoSize) return
         window.addEventListener('resize', () => this.reSize())
+    }
+
+    /**
+     * Initialize context menu for this chart by emitting a chartCreated event.
+     * The chart_context_menu.js module listens for this event and sets up the menu.
+     */
+    private _initContextMenu() {
+        // Emit custom event for chart_context_menu.js to handle
+        const event = new CustomEvent('chartCreated', {
+            detail: { chartId: this.id, handler: this }
+        });
+        document.dispatchEvent(event);
+        console.log('[Handler] Emitted chartCreated event for', this.id);
     }
 
 
@@ -394,12 +428,11 @@ export class Handler {
     }
 
     public static syncCharts(childChart: Handler, parentChart: Handler, crosshairOnly = false) {
-        function crosshairHandler(chart: Handler, point: any) {//point: BarData | LineData) {
+        function crosshairHandler(chart: Handler, point: any) {
             if (!point) {
                 chart.chart.clearCrosshairPosition()
                 return
             }
-            // TODO fix any point ?
             chart.chart.setCrosshairPosition(point.value || point!.close, point.time, chart.series);
             chart.legend.legendHandler(point, true)
         }
@@ -419,11 +452,33 @@ export class Handler {
             if (timeRange) parentTimeScale.setVisibleLogicalRange(timeRange);
         }
 
+        // Throttled crosshair handlers using requestAnimationFrame
+        let pendingParentCrosshair: any = null;
+        let pendingChildCrosshair: any = null;
+        let rafParent: number | null = null;
+        let rafChild: number | null = null;
+
         const setParentCrosshair = (param: MouseEventParams) => {
-            crosshairHandler(parentChart, getPoint(childChart.series, param))
+            pendingParentCrosshair = { chart: parentChart, point: getPoint(childChart.series, param) };
+            if (rafParent === null) {
+                rafParent = requestAnimationFrame(() => {
+                    if (pendingParentCrosshair) {
+                        crosshairHandler(pendingParentCrosshair.chart, pendingParentCrosshair.point);
+                    }
+                    rafParent = null;
+                });
+            }
         }
         const setChildCrosshair = (param: MouseEventParams) => {
-            crosshairHandler(childChart, getPoint(parentChart.series, param))
+            pendingChildCrosshair = { chart: childChart, point: getPoint(parentChart.series, param) };
+            if (rafChild === null) {
+                rafChild = requestAnimationFrame(() => {
+                    if (pendingChildCrosshair) {
+                        crosshairHandler(pendingChildCrosshair.chart, pendingChildCrosshair.point);
+                    }
+                    rafChild = null;
+                });
+            }
         }
 
         let selected = parentChart
