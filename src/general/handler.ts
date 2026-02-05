@@ -52,6 +52,7 @@ export class Handler {
     public spinner: HTMLDivElement | undefined;
     public alertPlugin: any;  // AlertPlugin from external JS file
     public orderPlugin: any;  // OrderPlugin from external JS file
+    public spotLevelPlugin: any;  // SpotLevelPlugin from external JS file
 
     public _seriesList: ISeriesApi<SeriesType>[] = [];
 
@@ -133,6 +134,18 @@ export class Handler {
             console.error('OrderPlugin Init Fail', e);
         }
 
+        // Initialize SpotLevelPlugin if available (loaded from external JS file)
+        try {
+            // @ts-ignore - SpotLevelPlugin is defined in spot_level_plugin.js
+            if (typeof SpotLevelPlugin !== 'undefined') {
+                // @ts-ignore
+                this.spotLevelPlugin = new SpotLevelPlugin(this);
+                console.log('SpotLevelPlugin Created');
+            }
+        } catch (e) {
+            console.error('SpotLevelPlugin Init Fail', e);
+        }
+
         document.addEventListener('keydown', (event) => {
             for (let i = 0; i < this.commandFunctions.length; i++) {
                 if (this.commandFunctions[i](event)) break
@@ -168,10 +181,21 @@ export class Handler {
 
 
     reSize() {
+        // [FIX] Save visible range BEFORE resize to prevent position shift
+        const timeScale = this.chart.timeScale();
+        const savedRange = timeScale.getVisibleLogicalRange();
+
         let topBarOffset = this.scale.height !== 0 ? this._topBar?._div.offsetHeight || 0 : 0
         this.chart.resize(window.innerWidth * this.scale.width, (window.innerHeight * this.scale.height) - topBarOffset)
         this.wrapper.style.width = `${100 * this.scale.width}%`
         this.wrapper.style.height = `${100 * this.scale.height}%`
+
+        // [FIX] Restore visible range AFTER resize to prevent position shift
+        if (savedRange) {
+            requestAnimationFrame(() => {
+                timeScale.setVisibleLogicalRange(savedRange);
+            });
+        }
 
         // TODO definitely a better way to do this
         if (this.scale.height === 0 || this.scale.width === 0) {

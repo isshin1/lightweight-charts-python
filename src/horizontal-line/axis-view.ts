@@ -17,6 +17,10 @@ export class HorizontalLineAxisView implements ISeriesPrimitiveAxisView {
         this._price = this._source._point.price.toFixed(precision).toString();
     }
     visible() {
+        // Check if axisLabelVisible option is explicitly set to false
+        if (this._source._options.axisLabelVisible === false) {
+            return false;
+        }
         return true;
     }
     tickVisible() {

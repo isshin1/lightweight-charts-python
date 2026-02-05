@@ -405,12 +405,17 @@ class SeriesCommon(Pane):
 
     def horizontal_line(self, price: NUM, color: str = 'rgb(122, 146, 202)', width: int = 2,
                         style: LINE_STYLE = 'solid', text: str = '', axis_label_visible: bool = True,
-                        func: Optional[Callable] = None
+                        func: Optional[Callable] = None, fixed_width: Optional[int] = None,
+                        on_dismiss: Optional[Callable] = None
                         ) -> 'HorizontalLine':
         """
         Creates a horizontal line at the given price.
+        
+        Args:
+            fixed_width: If provided, line will only be this many pixels wide from the right edge.
+            on_dismiss: If provided, called when user clicks the dismiss icon with the line's text/label.
         """
-        return HorizontalLine(self, price, color, width, style, text, axis_label_visible, func)
+        return HorizontalLine(self, price, color, width, style, text, axis_label_visible, func, fixed_width, on_dismiss)
 
     def trend_line(
         self,
@@ -700,6 +705,7 @@ class Candlestick(SeriesCommon):
             mode = chart_state.get('mode', 0)
             price_range_top = chart_state.get('priceRangeTop')
             price_range_bottom = chart_state.get('priceRangeBottom')
+            logical_range = chart_state.get('logicalRange')
             
             # Build atomic JS that:
             # 1. Pre-applies priceScale options
@@ -758,6 +764,30 @@ class Candlestick(SeriesCommon):
                     logVertical('4-AfterScrollPosition');
                 '''
             
+            if logical_range:
+                # 5. Apply logical visible range (indices)
+                restore_js += f'''
+                    try {{
+                        {self.id}.chart.timeScale().setVisibleLogicalRange({{
+                            from: {logical_range['from']},
+                            to: {logical_range['to']}
+                        }});
+                        
+                        // Force price scale to fit content based on new visible range
+                        {self.id}.chart.priceScale('right').applyOptions({{
+                            autoScale: true,
+                            scaleMargins: {{top: 0.1, bottom: 0.1}}
+                        }});
+                        
+                        console.log('[Restore] Applied logicalRange: from={logical_range['from']}, to={logical_range['to']}');
+                        logVertical('5-AfterLogicalRange');
+                    }} catch(e) {{
+                        console.error('[Restore] Failed to apply logicalRange:', e);
+                        // Using callback to bridge log to Python if possible, or just rely on console
+                        // {self._chart.id}.chart.timeScale().fitContent(); // DISABLE FITCONTENT FALLBACK TO SEE IF IT HELPS
+                    }}
+                '''
+            
             # NOTE: Vertical price range restoration is handled by mainwindow.py
             # AFTER extensions are applied, to prevent timing conflicts
             
@@ -795,30 +825,7 @@ class Candlestick(SeriesCommon):
                     {self.id}.chart.priceScale("right").applyOptions({{autoScale: true}})
             ''')
             
-            # Force visible range to last 300 bars
-            data_len = len(df)
-            if data_len > 0:
-                start_idx = max(0, data_len - 300)
-                from_time = int(df.iloc[start_idx]['time'])
-                last_time = int(df.iloc[-1]['time'])
-                bar_interval = self._interval if 0 < self._interval <= 86400 else 300
-                margin_seconds = min(20 * bar_interval, 604800)
-                to_time = int(last_time + margin_seconds)
-                
-                from datetime import datetime as dt
-                logger.debug(f"DEBUG: Set Range - Len: {data_len}, Interval: {bar_interval}s")
-                logger.debug(f"DEBUG:   From: {from_time} ({dt.fromtimestamp(from_time).strftime('%Y-%m-%d %H:%M')})")
-                logger.debug(f"DEBUG:   To:   {to_time} ({dt.fromtimestamp(to_time).strftime('%Y-%m-%d %H:%M')})")
-                
-                self.run_script(f'''
-                    setTimeout(() => {{
-                        try {{
-                            {self._chart.id}.chart.timeScale().setVisibleRange({{ from: {from_time}, to: {to_time} }});
-                        }} catch (e) {{
-                            {self._chart.id}.chart.timeScale().fitContent();
-                        }}
-                    }}, 50);
-                ''')
+            # NOTE: Fallback delayed script removed as we now use chart_state for margin
 
         # Handle drawings
         if keep_drawings:

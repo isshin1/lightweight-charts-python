@@ -1084,11 +1084,74 @@ class QtSplitChart(QObject):
     def _on_chart_ready(self, *args):
         """Called from JS when charts are fully initialized."""
         logger.info("[QtSplitChart] _on_chart_ready callback received - JS confirmed charts ready")
-        # Force apply current view mode now that JS is ready
-        self.set_view_mode(self._current_view_mode)
+        
+        # Check for pending view mode from restore_layout_state
+        if hasattr(self, '_pending_view_mode') and self._pending_view_mode:
+            view_mode = self._pending_view_mode
+            self._pending_view_mode = None
+            logger.info(f"[QtSplitChart] Applying pending view mode: {view_mode}")
+            self.set_view_mode(view_mode)
+        else:
+            # Force apply current view mode now that JS is ready
+            self.set_view_mode(self._current_view_mode)
+        
+        # [FIX] Explicitly reinject context menus after JS confirms readiness
+        # This ensures first tab gets context menus even if earlier injection was too early
         # [FIX] Explicitly reinject context menus after JS confirms readiness
         # This ensures first tab gets context menus even if earlier injection was too early
         QTimer.singleShot(200, self._reinject_context_menus)
+        
+        # [FIX] Inject Fast Restore logic (JS-side auto-restore on visibility)
+        # This eliminates the "jump" when switching tabs by restoring the range instantly upon resize/visibility
+        # By handling this in JS, we avoid the round-trip latency to Python
+        if hasattr(self, '_charts') and len(self._charts) > 0:
+            chart0 = self._charts[0]
+            chart0_id = chart0.id
+            
+            restore_script = f"""
+            (function() {{
+                var chartObj = {chart0_id};
+                if (!chartObj || !chartObj.chart) return;
+                
+                // 1. Subscribe to range changes to keep cache fresh
+                // This ensures window._tabVisibilityRange is always the latest user-viewed range
+                chartObj.chart.timeScale().subscribeVisibleLogicalRangeChange(range => {{
+                    if (range) window._tabVisibilityRange = range;
+                }});
+                
+                // 2. Monitor visibility/resize to restore instantly
+                var wasHidden = false;
+                
+                // We observe the chart container div 
+                // typically chartObj.wrapper is the container, or we use the ID
+                var container = document.getElementById('{chart0_id}');
+                if (container) {{
+                    new ResizeObserver(entries => {{
+                        for (let entry of entries) {{
+                            // Check if effectively hidden (0 dimension)
+                            var isHidden = entry.contentRect.width === 0 || entry.contentRect.height === 0;
+                            
+                            if (isHidden) {{
+                                wasHidden = true;
+                            }} else {{
+                                // Transition from hidden -> visible
+                                if (wasHidden && window._tabVisibilityRange) {{
+                                    try {{
+                                        console.log('[FastRestore] Restoring range instantly on visible');
+                                        chartObj.chart.timeScale().setVisibleLogicalRange(window._tabVisibilityRange);
+                                    }} catch(e) {{ 
+                                        console.error('[FastRestore] Error:', e); 
+                                    }}
+                                }}
+                                wasHidden = false;
+                            }}
+                        }}
+                    }}).observe(container);
+                    console.log('[FastRestore] Initialized for {chart0_id}');
+                }}
+            }})();
+            """
+            self.run_script(restore_script)
 
 
     def _on_main_chart_click(self, chart, time, price):
@@ -1407,4 +1470,96 @@ class QtSplitChart(QObject):
             if chart and chart.toolbox:
                 logger.debug(f"[QtSplitChart] Connecting on_drawing_changed for Chart[{idx}]")
                 chart.toolbox.on_drawing_changed = callback
+    
+    def get_layout_state(self) -> dict:
+        """Get serializable layout state for persistence.
+        
+        Returns:
+            Dict with view_mode, visible_indices, split_ratio, h_ratio, v_ratio, active_index
+        """
+        return {
+            'view_mode': self._current_view_mode,
+            'visible_indices': list(self._visible_indices),
+            'split_ratio': self._split_ratio,
+            'h_ratio': getattr(self, '_h_ratio', 0.5),
+            'v_ratio': getattr(self, '_v_ratio', 0.5),
+            'active_index': self._active_index
+        }
+    
+    def restore_layout_state(self, state: dict):
+        """Restore layout from persisted state.
+        
+        Args:
+            state: Dict from get_layout_state()
+        """
+        if not state:
+            return
+        
+        self._split_ratio = state.get('split_ratio', 0.5)
+        self._h_ratio = state.get('h_ratio', 0.5)
+        self._v_ratio = state.get('v_ratio', 0.5)
+        self._visible_indices = set(state.get('visible_indices', [0]))
+        self._active_index = state.get('active_index', 0)
+        view_mode = state.get('view_mode', 'single')
+        
+        logger.info(f"[QtSplitChart] restore_layout_state: mode={view_mode}, visible={self._visible_indices}")
+        
+        # Defer view mode application to after chart is ready
+        if self._is_loaded:
+            self.set_view_mode(view_mode)
+        else:
+            # Store for later application in _on_chart_ready
+            self._pending_view_mode = view_mode
+    
+    def save_visibility_state(self):
+        """Save chart visible ranges before tab is hidden.
+        
+        Called by LiveTradesTabContent.hideEvent() to preserve chart positions
+        across tab switches.
+        """
+        if not self._is_loaded:
+            return
+        
+        chart0_id = self._charts[0].id if len(self._charts) > 0 else None
+        if chart0_id:
+            self._main_chart.run_script(f"""
+                (function() {{
+                    var chart = {chart0_id};
+                    if (chart && chart.chart) {{
+                        window._tabVisibilityRange = chart.chart.timeScale().getVisibleLogicalRange();
+                        window._tabVisibilityTimestamp = Date.now();
+                        console.log('[QtSplitChart] save_visibility_state:', window._tabVisibilityRange);
+                    }}
+                }})();
+            """)
+            logger.debug("[QtSplitChart] save_visibility_state called")
+    
+    def restore_visibility_state(self, delay_ms: int = 400):
+        """Restore chart visible ranges after tab becomes visible.
+        
+        Called by LiveTradesTabContent.showEvent() to restore chart positions
+        across tab switches. Uses internal JS setTimeout for timing.
+        
+        Args:
+            delay_ms: Delay before restoring (default 400ms to ensure sync completes)
+        """
+        if not self._is_loaded:
+            return
+        
+        # Apply saved range to ALL visible charts (prevents sync issues)
+        for idx, chart in enumerate(self._charts):
+            if chart:
+                self._main_chart.run_script(f"""
+                    (function() {{
+                        setTimeout(function() {{
+                            var savedRange = window._tabVisibilityRange;
+                            var handler = {chart.id};
+                            if (savedRange && handler && handler.chart) {{
+                                console.log('[QtSplitChart] restore_visibility_state for {chart.id}:', savedRange);
+                                handler.chart.timeScale().setVisibleLogicalRange(savedRange);
+                            }}
+                        }}, {delay_ms});
+                    }})();
+                """)
+        logger.debug(f"[QtSplitChart] restore_visibility_state scheduled ({delay_ms}ms delay)")
 

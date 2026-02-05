@@ -5,7 +5,7 @@ import { DrawingPaneView, ViewPoint } from '../drawing/pane-view';
 
 export class HorizontalLinePaneView extends DrawingPaneView {
     _source: HorizontalLine;
-    _point: ViewPoint = {x: null, y: null};
+    _point: ViewPoint = { x: null, y: null };
 
     constructor(source: HorizontalLine) {
         super(source);
@@ -25,7 +25,12 @@ export class HorizontalLinePaneView extends DrawingPaneView {
     renderer() {
         return new HorizontalLinePaneRenderer(
             this._point,
-            this._source._options
+            this._source._options,
+            this._source
         );
+    }
+
+    zOrder(): "bottom" | "normal" | "top" {
+        return 'bottom';
     }
 }

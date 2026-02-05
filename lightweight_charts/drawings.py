@@ -81,11 +81,22 @@ class TwoPointDrawing(Drawing):
 
 
 class HorizontalLine(Drawing):
-    def __init__(self, chart, price, color, width, style, text, axis_label_visible, func):
+    def __init__(self, chart, price, color, width, style, text, axis_label_visible, func, fixed_width=None, on_dismiss=None):
         super().__init__(chart, func)
         self.price = price
+        self.on_dismiss = on_dismiss
+        
+        # Build options dict
+        fixed_width_option = f'fixedWidth: {fixed_width},' if fixed_width else ''
+        axis_label_option = f'axisLabelVisible: {"true" if axis_label_visible else "false"},'
+        
         self.run_script(f'''
-
+        console.log('[HorizontalLine DEBUG] Creating line at price {price}');
+        console.log('[HorizontalLine DEBUG] Chart ID: {chart.id}');
+        console.log('[HorizontalLine DEBUG] Chart object:', {chart.id});
+        console.log('[HorizontalLine DEBUG] Series exists:', !!{chart.id}.series);
+        console.log('[HorizontalLine DEBUG] attachPrimitive exists:', !!({chart.id}.series && {chart.id}.series.attachPrimitive));
+        
         {self.id} = new Lib.HorizontalLine(
             {{price: {price}}},
             {{
@@ -93,15 +104,35 @@ class HorizontalLine(Drawing):
                 lineStyle: {as_enum(style, LINE_STYLE)},
                 width: {width},
                 text: `{text}`,
+                {fixed_width_option}
+                {axis_label_option}
             }},
-            callbackName={f"'{self.id}'" if func else 'null'}
+            callbackName={f"'{self.id}'" if func else 'null'},
+            dismissCallback={f"'{self.id}_dismiss'" if on_dismiss else 'null'}
         )
+        console.log('[HorizontalLine DEBUG] Line object created:', {self.id});
+        
         if ({chart.id}.series && {chart.id}.series.attachPrimitive) {{
             {chart.id}.series.attachPrimitive({self.id})
+            console.log('[HorizontalLine DEBUG] attachPrimitive called successfully');
         }} else {{
             console.warn('[HorizontalLine] attachPrimitive missing for', {chart.id});
         }}
         ''')
+        
+        # Setup dismiss callback handler
+        if on_dismiss:
+            def dismiss_wrapper(label_text):
+                on_dismiss(label_text)
+            
+            async def dismiss_wrapper_async(label_text):
+                await on_dismiss(label_text)
+            
+            self.win.handlers[f'{self.id}_dismiss'] = dismiss_wrapper_async if asyncio.iscoroutinefunction(on_dismiss) else dismiss_wrapper
+        
+        # Always register with toolBox for hover events (even without func callback)
+        self.run_script(f'{chart.id}.toolBox?.addNewDrawing({self.id})')
+        
         if not func:
             return
 
@@ -114,7 +145,6 @@ class HorizontalLine(Drawing):
             await func(chart, self)
 
         self.win.handlers[self.id] = wrapper_async if asyncio.iscoroutinefunction(func) else wrapper
-        self.run_script(f'{chart.id}.toolBox?.addNewDrawing({self.id})')
 
     def update(self, price: float):
         """

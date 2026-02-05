@@ -9,6 +9,10 @@ export interface DrawingOptions {
     text?: string;
     textPosition?: 'above' | 'below';
     labelPos?: number;  // Position along the line (0 to 1, default 0.5)
+    // Fixed width (from right edge)
+    fixedWidth?: number;  // If set, line is only this many pixels wide from right edge
+    // Axis label visibility
+    axisLabelVisible?: boolean;  // If false, hide axis label (default true)
 }
 
 export const defaultOptions: DrawingOptions = {
