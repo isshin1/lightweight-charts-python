@@ -136,8 +136,10 @@
         const timeScale = this.chart.timeScale();
         if (!priceScale) return;
 
-        // SAVE current time range to restore later (prevents horizontal shift)
-        const savedTimeRange = timeScale.getVisibleLogicalRange();
+        // [REMOVED] Do NOT save/restore time range here!
+        // The correct range is set by abstract.py's atomic chart.set() operation.
+        // Saving/restoring here was overriding the correct range with stale data.
+        // const savedTimeRange = timeScale.getVisibleLogicalRange();
 
         // Get current data
         const data = this.series.data?.() || [];
@@ -179,18 +181,8 @@
           log('Manual fit complete - autoScale kept disabled (no toggle)');
         }
 
-        // RESTORE time range if it changed (prevents any horizontal drift)
-        if (savedTimeRange) {
-          requestAnimationFrame(() => {
-            const currentRange = timeScale.getVisibleLogicalRange();
-            if (currentRange &&
-              (Math.abs(currentRange.from - savedTimeRange.from) > 0.01 ||
-                Math.abs(currentRange.to - savedTimeRange.to) > 0.01)) {
-              timeScale.setVisibleLogicalRange(savedTimeRange);
-              log('Restored time range after stabilization');
-            }
-          });
-        }
+        // [REMOVED] Do NOT restore time range - this was overriding correct range!
+        // The correct range is already set by abstract.py
       } catch (e) {
         log('Error in manual fit:', e);
       }

@@ -45,6 +45,7 @@ export class Handler {
 
     public series: ISeriesApi<SeriesType>;
     public volumeSeries: ISeriesApi<SeriesType>;
+    public volumeMap: Map<number, number> = new Map(); // time -> volume lookup
 
     public legend: Legend;
     private _topBar: TopBar | undefined;
@@ -91,6 +92,28 @@ export class Handler {
         this.chart = this._createChart();
         this.series = this.createCandlestickSeries();
         this.volumeSeries = this.createVolumeSeries();
+
+        // Auto-populate volumeMap when volume data is set/updated
+        // This intercepts calls from Python (abstract.py) so the drawing
+        // can look up volume by timestamp without relying on dataByIndex()
+        const origSetData = this.volumeSeries.setData.bind(this.volumeSeries);
+        (this.volumeSeries as any).setData = (data: any[]) => {
+            origSetData(data);
+            this.volumeMap.clear();
+            for (const d of data) {
+                if (d.time != null && d.value != null) {
+                    this.volumeMap.set(d.time, d.value);
+                }
+            }
+            console.log(`[Handler] volumeMap populated: ${this.volumeMap.size} entries`);
+        };
+        const origUpdate = this.volumeSeries.update.bind(this.volumeSeries);
+        (this.volumeSeries as any).update = (data: any) => {
+            origUpdate(data);
+            if (data.time != null && data.value != null) {
+                this.volumeMap.set(data.time, data.value);
+            }
+        };
 
         // Register for async countdown timer updates (updates every second independent of ticks)
         try {
@@ -181,21 +204,22 @@ export class Handler {
 
 
     reSize() {
-        // [FIX] Save visible range BEFORE resize to prevent position shift
-        const timeScale = this.chart.timeScale();
-        const savedRange = timeScale.getVisibleLogicalRange();
+        // [DISABLED] Range save/restore was causing visible range corruption on tab switches.
+        // The savedRange gets corrupted (accumulated from prior data loads), causing wrong range.
+        // const timeScale = this.chart.timeScale();
+        // const savedRange = timeScale.getVisibleLogicalRange();
 
         let topBarOffset = this.scale.height !== 0 ? this._topBar?._div.offsetHeight || 0 : 0
         this.chart.resize(window.innerWidth * this.scale.width, (window.innerHeight * this.scale.height) - topBarOffset)
         this.wrapper.style.width = `${100 * this.scale.width}%`
         this.wrapper.style.height = `${100 * this.scale.height}%`
 
-        // [FIX] Restore visible range AFTER resize to prevent position shift
-        if (savedRange) {
-            requestAnimationFrame(() => {
-                timeScale.setVisibleLogicalRange(savedRange);
-            });
-        }
+        // [DISABLED] This was restoring a corrupted range
+        // if (savedRange) {
+        //     requestAnimationFrame(() => {
+        //         timeScale.setVisibleLogicalRange(savedRange);
+        //     });
+        // }
 
         // TODO definitely a better way to do this
         if (this.scale.height === 0 || this.scale.width === 0) {
@@ -219,7 +243,7 @@ export class Handler {
             layout: {
                 textColor: window.pane.color,
                 background: {
-                    color: '#000000',
+                    color: '#ffffff',
                     type: ColorType.Solid,
                 },
                 fontSize: 12
@@ -540,13 +564,16 @@ export class Handler {
             setParentRange
         )
 
+        // Initial bidirectional crosshair sync (both directions work immediately)
         parentChart.chart.subscribeCrosshairMove(setChildCrosshair)
+        childChart.chart.subscribeCrosshairMove(setParentCrosshair)
 
-        const parentRange = parentTimeScale.getVisibleLogicalRange()
-        if (parentRange) childTimeScale.setVisibleLogicalRange(parentRange)
-
-        if (crosshairOnly) return;
-        parentChart.chart.timeScale().subscribeVisibleLogicalRangeChange(setChildRange)
+        // Only sync visible range if NOT crosshairOnly mode
+        if (!crosshairOnly) {
+            const parentRange = parentTimeScale.getVisibleLogicalRange()
+            if (parentRange) childTimeScale.setVisibleLogicalRange(parentRange)
+            parentChart.chart.timeScale().subscribeVisibleLogicalRangeChange(setChildRange)
+        }
     }
 
     public static makeSearchBox(chart: Handler) {

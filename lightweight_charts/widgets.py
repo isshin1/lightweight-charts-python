@@ -49,10 +49,28 @@ if QWebEngineView:
         
         class ConsoleLoggingPage(QWebEnginePage):
             def javaScriptConsoleMessage(self, level, message, lineNumber, sourceID):
-                # Log DEBUG, QtSplitChart messages, and errors
-                if "[DEBUG]" in message or "DEBUG" in message:
+                # Log DEBUG, QtSplitChart, FastRestore, ChartSet, Restore, RangeFix, RangeTracker, OrderPlugin messages, and errors
+                if "[AXIS-DEBUG]" in message:
+                    _console_logger.info(f"[JS] {message}")
+                elif "[DEBUG]" in message or "DEBUG" in message:
                     _console_logger.info(f"[JS] {message}")
                 elif "[QtSplitChart]" in message:
+                    _console_logger.info(f"[JS] {message}")
+                elif "[FastRestore]" in message:
+                    _console_logger.info(f"[JS] {message}")
+                elif "[ChartSet]" in message:
+                    _console_logger.info(f"[JS] {message}")
+                elif "[Restore" in message:  # Matches [Restore 0-Before], [Restore] Applied, etc.
+                    _console_logger.info(f"[JS] {message}")
+                elif "[RangeFix]" in message:
+                    _console_logger.info(f"[JS] {message}")
+                elif "[RangeTracker]" in message:
+                    _console_logger.info(f"[JS] {message}")
+                elif "[OrderPlugin" in message:
+                    _console_logger.info(f"[JS] {message}")
+                elif "[VolumeProfile" in message:
+                    _console_logger.info(f"[JS] {message}")
+                elif "[Handler" in message:
                     _console_logger.info(f"[JS] {message}")
                 elif level == 2:  # Error level
                     _console_logger.error(f"[JS:ERROR] {message} (Line {lineNumber})")

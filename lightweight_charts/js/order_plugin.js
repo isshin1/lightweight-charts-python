@@ -166,28 +166,40 @@ class OrderPlugin {
       const priceScale = this.handler.series.priceScale();
       const priceScaleWidth = priceScale.width();
 
+      // [DEBUG] Log once every 60 frames (approx every 1 second at 60fps)
+      const shouldLogDebug = (this._debugFrameCount++ % 60 === 0) && this.orders.size > 0;
+      if (!this._debugFrameCount) this._debugFrameCount = 0;
+
       // Get chart element offset - priceToCoordinate returns coords relative to chart canvas,
       // but label is positioned relative to handler.div (which may have legend at top)
       let chartTopOffset = 0;
+      let debugChartRect = null;
+      let debugDivRect = null;
       try {
         if (this.handler.chart && this.handler.chart.chartElement && this.handler.div) {
           const chartEl = this.handler.chart.chartElement();
           const divRect = this.handler.div.getBoundingClientRect();
           const chartRect = chartEl.getBoundingClientRect();
           chartTopOffset = chartRect.top - divRect.top;
+          debugChartRect = { top: chartRect.top, height: chartRect.height };
+          debugDivRect = { top: divRect.top, height: divRect.height };
         }
       } catch (e) { }
 
-      // Fix: Get height from chart options or container, as priceScale() doesn't expose height()
+      // [FIX] Get actual rendered height from the div container, not chart options
+      // chart.options().height returns stale/default value (e.g., 30) in split chart mode
+      // which causes y-coordinate clamping to push labels to the top
       let chartHeight = 0;
-      try {
-        if (this.handler.chart && this.handler.chart.options) {
-          chartHeight = this.handler.chart.options().height;
-        }
-      } catch (e) { }
-
-      if (!chartHeight && this.handler.div) {
+      if (this.handler.div) {
         chartHeight = this.handler.div.clientHeight;
+      }
+      // Fallback to chart options only if div height is not available
+      if (!chartHeight) {
+        try {
+          if (this.handler.chart && this.handler.chart.options) {
+            chartHeight = this.handler.chart.options().height;
+          }
+        } catch (e) { }
       }
 
       for (const [id, order] of this.orders) {
@@ -199,6 +211,24 @@ class OrderPlugin {
         try {
           y = this.handler.series.priceToCoordinate(order.price);
         } catch (e) { }
+
+        // [DEBUG] Log positioning data
+        if (shouldLogDebug) {
+          console.log('[OrderPlugin DEBUG] ' + JSON.stringify({
+            orderId: id,
+            price: order.price,
+            y: y,
+            chartTopOffset: chartTopOffset,
+            chartRect: debugChartRect,
+            divRect: debugDivRect,
+            chartHeight: chartHeight,
+            priceScaleWidth: priceScaleWidth,
+            handlerId: this.handler?.id,
+            handlerDivClientH: this.handler?.div ? this.handler.div.clientHeight : 'N/A',
+            wrapperTop: this.handler?.wrapper?.style?.top,
+            wrapperPosition: this.handler?.wrapper?.style?.position
+          }));
+        }
 
         if (y === null) {
           // Price is outside visible range.
@@ -232,9 +262,21 @@ class OrderPlugin {
 
           order.label.style.display = 'flex';
           // Center label vertically on the line, accounting for chart element offset
-          order.label.style.top = (y + chartTopOffset - 12) + 'px';
+          const finalTop = y + chartTopOffset - 12;
+          order.label.style.top = finalTop + 'px';
           // Anchor to the right edge of chart area (next to scale)
           order.label.style.right = priceScaleWidth + 'px';
+
+          // [DEBUG] Log final position once per second
+          if (shouldLogDebug) {
+            console.log('[OrderPlugin POSITION] ' + JSON.stringify({
+              orderId: id,
+              yRaw: y,
+              chartTopOffset: chartTopOffset,
+              finalTop: finalTop,
+              labelParent: order.label.parentElement ? order.label.parentElement.className : 'N/A'
+            }));
+          }
         }
       }
     } catch (e) {

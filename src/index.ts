@@ -5,6 +5,7 @@ export * from './box/box';
 export * from './trend-line/trend-line';
 export * from './text-annotation/text-annotation';
 export * from './arrow-marker/arrow-marker';
+export * from './volume-profile/volume-profile';
 export * from './context-menu/width-picker';
 
 // New consolidated drawings module

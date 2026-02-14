@@ -662,7 +662,7 @@
                 rendererOptions._internal_paddingTop = 2.5 / 12 * currentFontSize; // 2.5 px for 12px font
                 rendererOptions._internal_paddingBottom = rendererOptions._internal_paddingTop;
                 rendererOptions._internal_paddingInner = currentFontSize / 12 * rendererOptions._internal_tickLength;
-                rendererOptions._internal_paddingOuter = currentFontSize / 12 * rendererOptions._internal_tickLength;
+                rendererOptions._internal_paddingOuter = 10; // price axis padding 
                 rendererOptions._internal_baselineOffset = 0;
             }
             rendererOptions._internal_color = this._private__textColor();
@@ -1027,11 +1027,7 @@
             if (!this._private__data._internal_visible) {
                 return 0;
             }
-            // ANTI-GRAVITY PATCH START - Double height for multi-line text
-            const hasMultiline = this._private__data && this._private__data._internal_text && this._private__data._internal_text.includes('\n');
-            const heightMultiplier = hasMultiline ? 2.2 : 1;
-            return (rendererOptions._internal_fontSize * heightMultiplier) + rendererOptions._internal_paddingTop + rendererOptions._internal_paddingBottom;
-            // ANTI-GRAVITY PATCH END
+            return rendererOptions._internal_fontSize + rendererOptions._internal_paddingTop + rendererOptions._internal_paddingBottom;
         }
         _internal_draw(target, rendererOptions, textWidthCache, align) {
             if (!this._private__data._internal_visible || this._private__data._internal_text.length === 0) {
@@ -1078,16 +1074,11 @@
                 // ANTI-GRAVITY PATCH START
                 const text = this._private__data._internal_text;
                 if (text.includes('\n')) {
-                    // Force reasonable font size for drawing (ignoring the 44px hack)
                     ctx.font = "bold 14px Arial";
-
                     const lines = text.split('\n');
-                    // Draw lines with offsets (larger offset for 14px font)
                     ctx.fillText(lines[0], gm._internal_xText, (gm._internal_yTop + gm._internal_yBottom) / 2 + gm._internal_textMidCorrection - 9);
                     ctx.fillText(lines[1], gm._internal_xText, (gm._internal_yTop + gm._internal_yBottom) / 2 + gm._internal_textMidCorrection + 9);
-
                 } else {
-                    // Normal behavior for other labels
                     ctx.fillText(this._private__data._internal_text, gm._internal_xText, (gm._internal_yTop + gm._internal_yBottom) / 2 + gm._internal_textMidCorrection);
                 }
                 // ANTI-GRAVITY PATCH END
@@ -1096,19 +1087,19 @@
         _private__calculateGeometry(scope, rendererOptions, textWidthCache, align) {
             var _a;
             const { context: ctx, bitmapSize, mediaSize, horizontalPixelRatio, verticalPixelRatio } = scope;
-            const tickSize = (this._private__data._internal_tickVisible || !this._private__data._internal_moveTextToInvisibleTick) ? rendererOptions._internal_tickLength : 0;
+            const tickSize = (this._private__data._internal_tickVisible || !this._private__data._internal_moveTextToInvisibleTick)
+                ? rendererOptions._internal_tickLength : 0;
             const horzBorder = this._private__data._internal_separatorVisible ? rendererOptions._internal_borderSize : 0;
             const paddingTop = rendererOptions._internal_paddingTop + this._private__commonData._internal_additionalPaddingTop;
             const paddingBottom = rendererOptions._internal_paddingBottom + this._private__commonData._internal_additionalPaddingBottom;
             const paddingInner = rendererOptions._internal_paddingInner;
-            const paddingOuter = rendererOptions._internal_paddingOuter;
+            const paddingOuter = 5; // Label background should not extend into axis padding area
             const text = this._private__data._internal_text;
             const actualTextHeight = rendererOptions._internal_fontSize;
             const textMidCorrection = textWidthCache._internal_yMidCorrection(ctx, text);
             // ANTI-GRAVITY PATCH START
             let textWidth;
             if (text.includes('\n')) {
-                // Temporarily reset font for measurement
                 ctx.save();
                 ctx.font = "bold 14px Arial";
                 const lines = text.split('\n');
@@ -1121,7 +1112,7 @@
                 textWidth = Math.ceil(textWidthCache._internal_measureText(ctx, text));
             }
             // ANTI-GRAVITY PATCH END
-            // ANTI-GRAVITY PATCH START - Geometry Height
+            // ANTI-GRAVITY PATCH START
             const hasMultilineHeight = text.includes('\n');
             const heightFactor = hasMultilineHeight ? 2.2 : 1;
             const totalHeight = (actualTextHeight * heightFactor) + paddingTop + paddingBottom;
@@ -1154,7 +1145,7 @@
                 // 3               4
                 xOutsideBitmap = xInsideBitmap - totalWidthBitmap;
                 xTickBitmap = xInsideBitmap - tickSizeBitmap;
-                xText = xInside - tickSize - paddingInner - horzBorder;
+                xText = xInside - tickSize - paddingInner;
             }
             else {
                 // 1               2
@@ -3807,7 +3798,6 @@
                 axisRendererData._internal_text = this._internal__axisText(lastValueData, showSeriesLastValue, showPriceAndPercentage);
                 // ANTI-GRAVITY PATCH START
                 if (axisRendererData._internal_text && this._private__source._internal_seriesType() === 'Candlestick') {
-                    // Check Market Hours (09:15 - 15:30)
                     const now = new Date();
                     const totalMins = now.getHours() * 60 + now.getMinutes();
                     const startMins = 9 * 60 + 15; // 09:15
@@ -3834,15 +3824,8 @@
                             // 1. Append Vertical Countdown
                             axisRendererData._internal_text += '\n' + timeStr;
 
-                            // 2. SPOOF FONT SIZE to force layout engine to reserve space
-                            // This "lying" forces the red box to be ~50px tall (size is derived from font size)
-                            // which pushes the neighbor labels away.
-                            if (this._private__commonRendererData) {
-                                // Original font was likely "14px ...". We set it to 44px to secure height.
-                                this._private__commonRendererData._internal_font = 'bold 44px Arial';
-                                this._private__commonRendererData._internal_fontSize = 44;
-                                // Note: we must ensure we reset or handle this in draw() or it draws huge text!
-                            }
+                            // 2. SPOOF FONT SIZE REMOVED
+                            // We rely on the heightMultiplier patch in _internal_height instead.
                         }
                     }
                 }
@@ -9880,7 +9863,17 @@
             }
             const views = this._private__backLabels();
             for (let j = views.length; j--;) {
-                const width = this._private__widthCache._internal_measureText(ctx, views[j]._internal_text());
+                const labelText = views[j]._internal_text();
+                let width;
+                if (labelText.includes('\n')) {
+                    const lines = labelText.split('\n');
+                    width = 0;
+                    for (let k = 0; k < lines.length; k++) {
+                        width = Math.max(width, this._private__widthCache._internal_measureText(ctx, lines[k]));
+                    }
+                } else {
+                    width = this._private__widthCache._internal_measureText(ctx, labelText);
+                }
                 if (width > tickMarkMaxWidth) {
                     tickMarkMaxWidth = width;
                 }
@@ -9897,10 +9890,17 @@
                 rendererOptions._internal_tickLength +
                 rendererOptions._internal_paddingInner +
                 rendererOptions._internal_paddingOuter +
-                5 /* Constants.LabelOffset */ +
+                0 /* Constants.LabelOffset - TESTING: set to 0 */ +
                 resultTickMarksMaxWidth);
+            const finalWidth = suggestPriceScaleWidth(res);
+            console.log('[AXIS-DEBUG] optimalWidth:', finalWidth, 'raw:', res,
+                'border:', rendererOptions._internal_borderSize,
+                'tick:', rendererOptions._internal_tickLength,
+                'padIn:', rendererOptions._internal_paddingInner,
+                'padOut:', rendererOptions._internal_paddingOuter,
+                'textW:', resultTickMarksMaxWidth);
             // make it even, remove this after migration to perfect fancy canvas
-            return suggestPriceScaleWidth(res);
+            return finalWidth;
         }
         _internal_setSize(newSize) {
             if (this._private__size === null || !equalSizes(this._private__size, newSize)) {
@@ -10247,7 +10247,7 @@
             const width = this._internal_optimalWidth();
             // avoid price scale is shrunk
             // using < instead !== to avoid infinite changes
-            if (this._private__prevOptimalWidth < width) {
+            if (this._private__prevOptimalWidth !== width) {
                 this._private__pane._internal_chart()._internal_model()._internal_fullUpdate();
             }
             this._private__prevOptimalWidth = width;
@@ -11673,6 +11673,7 @@
             }
             leftPriceAxisWidth = suggestPriceScaleWidth(leftPriceAxisWidth);
             rightPriceAxisWidth = suggestPriceScaleWidth(rightPriceAxisWidth);
+            console.log('[AXIS-DEBUG] _adjustSizeImpl rightWidth:', rightPriceAxisWidth, 'minWidth:', this._private__options.rightPriceScale.minimumWidth);
             const width = this._private__width;
             const height = this._private__height;
             const paneWidth = Math.max(width - leftPriceAxisWidth - rightPriceAxisWidth, 0);

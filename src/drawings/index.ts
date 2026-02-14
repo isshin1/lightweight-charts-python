@@ -25,6 +25,7 @@ export { VerticalLine } from '../vertical-line/vertical-line';
 export { Box } from '../box/box';
 export { TextAnnotation } from '../text-annotation/text-annotation';
 export { ArrowMarker, ArrowUpMarker, ArrowDownMarker } from '../arrow-marker/arrow-marker';
+export { VolumeProfile } from '../volume-profile/volume-profile';
 
 // Context menu
 export { ContextMenu, camelToTitle } from '../context-menu/context-menu';

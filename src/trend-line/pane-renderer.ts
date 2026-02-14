@@ -78,9 +78,15 @@ export class TrendLinePaneRenderer extends TwoPointDrawingPaneRenderer {
             const metrics = ctx.measureText(text);
             const width = metrics.width / scope.horizontalPixelRatio;
             const height = 14; // approximate text height
+            // Calculate rectY based on textBaseline direction
+            const textAnchorY = (y + offsetY) / scope.verticalPixelRatio;
+            const rectY = this._options.textPosition === 'below'
+                ? textAnchorY           // textBaseline 'top': text extends downward
+                : textAnchorY - height; // textBaseline 'bottom': text extends upward
+
             this._source._labelRect = {
                 x: (x / scope.horizontalPixelRatio) - (width / 2),
-                y: ((y + offsetY) / scope.verticalPixelRatio) - (height / 2),
+                y: rectY,
                 width: width,
                 height: height
             };

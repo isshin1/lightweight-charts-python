@@ -446,8 +446,7 @@ class QtSplitChart(QObject):
             horz_color='#ffffff50'
         )
         chart.legend(visible=True, font_size=14)
-        # Fix horizontal jitter by enforcing minimum price scale width
-        chart.price_scale(minimum_width=75)
+        chart.price_scale()
         
     def _on_load_finished(self, ok: bool):
         """Called when the webview finishes loading."""
@@ -744,9 +743,6 @@ class QtSplitChart(QObject):
                 return
         else:
             return
-        
-        # [FIX] Check if we're splitting from single BEFORE modifying visible_indices
-        is_from_single = len(self._visible_indices) == 1 and 0 in self._visible_indices
             
         # Add target to visible charts
         self._visible_indices.add(target_idx)
@@ -777,10 +773,10 @@ class QtSplitChart(QObject):
             # Default to grid for any other combination
             new_mode = 'grid'
         
-        logger.info(f"[QtSplitChart] Split: visible={self._visible_indices}, mode={new_mode}, from_single={is_from_single}")
+        logger.info(f"[QtSplitChart] Split: visible={self._visible_indices}, mode={new_mode}")
         
-        # Apply the layout with range preservation if splitting from single
-        self.set_view_mode(new_mode, preserve_chart0_range=is_from_single)
+        # Apply the layout (no automatic range modifications)
+        self.set_view_mode(new_mode)
         
         # Emit signal for mainwindow to load data into the new chart
         # Format: 'direction:target_idx' e.g. 'down:2' or 'right:1'
@@ -881,8 +877,8 @@ class QtSplitChart(QObject):
         
         Args:
             mode: View mode name
-            preserve_chart0_range: If True, save chart[0]'s visible range before resize 
-                                   and restore after. Used when splitting from single view.
+            preserve_chart0_range: DEPRECATED - no longer used. Charts should not be
+                                   automatically modified after initial render.
         
         Supported modes:
         - single: Only chart[0] visible (1.0, 1.0)
@@ -906,23 +902,10 @@ class QtSplitChart(QObject):
         if not self._is_loaded:
             return
         
-        # [FIX] Save chart[0]'s visible range when explicitly requested (on split)
-        chart0_id = self._charts[0].id if len(self._charts) > 0 else None
+        # NOTE: Do NOT save/restore chart ranges on split - charts should maintain
+        # their position without automatic modifications after initial render
         
-        logger.info(f"[QtSplitChart] set_view_mode: {mode} (preserve_range={preserve_chart0_range})")
-        
-        # Save if explicitly requested (when splitting from single to multi-chart)
-        if chart0_id and preserve_chart0_range:
-            self._main_chart.run_script(f"""
-                (function() {{
-                    var chart = {chart0_id};
-                    if (chart && chart.chart) {{
-                        window._savedVisibleRange = chart.chart.timeScale().getVisibleLogicalRange();
-                        window._savedRangeTimestamp = Date.now();
-                        console.log('[QtSplitChart] Saved visible range for split:', window._savedVisibleRange);
-                    }}
-                }})();
-            """)
+        logger.info(f"[QtSplitChart] set_view_mode: {mode}")
         
         # Define resize dimensions AND positions for each mode
         # Format: {chart_idx: (width, height, left, top)}
@@ -1029,22 +1012,14 @@ class QtSplitChart(QObject):
         # Apply active border
         self._update_active_border()
         
-        # [FIX] Restore chart[0]'s visible range after resize to prevent candles jumping
-        # Only restore if preserve_chart0_range was requested
-        if chart0_id and preserve_chart0_range:
-            self._main_chart.run_script(f"""
-                (function() {{
-                    // Longer delay (400ms) to ensure all resize/sync operations complete
-                    setTimeout(function() {{
-                        var chart = {chart0_id};
-                        if (chart && chart.chart && window._savedVisibleRange) {{
-                            console.log('[QtSplitChart] Restoring visible range after split:', window._savedVisibleRange);
-                            chart.chart.timeScale().setVisibleLogicalRange(window._savedVisibleRange);
-                            window._savedVisibleRange = null;  // Clear after use
-                        }}
-                    }}, 400);
-                }})();
-            """)
+        # [FIX] Re-trigger crosshair sync when transitioning to multi-chart mode
+        # Uses ResizeObserver via _sync_visible_charts (no delays)
+        if mode != 'single' and self._sync_enabled:
+            # Small delay to ensure DOM updates propogate for ResizeObserver to catch
+            QTimer.singleShot(50, self._sync_visible_charts)
+        
+        # NOTE: Do NOT restore chart ranges after resize - charts should stay
+        # exactly where the user left them. No automatic modifications.
         
         # Emit ready signal
         self.ready.emit()
@@ -1101,57 +1076,153 @@ class QtSplitChart(QObject):
         # This ensures first tab gets context menus even if earlier injection was too early
         QTimer.singleShot(200, self._reinject_context_menus)
         
+        # [DEBUG] Inject global interceptor to track ALL setVisibleLogicalRange calls
+        if hasattr(self, '_charts') and len(self._charts) > 0:
+            chart_ids = [c.id for c in self._charts if c is not None]
+            logger.info(f"[RangeTracker] Injecting interceptors for charts: {chart_ids}")
+            import json
+            self.run_script(f'''
+                (function() {{
+                    console.log('[RangeTracker] ===== INSTALLING INTERCEPTORS =====');
+                    var chartIds = {json.dumps(chart_ids)};
+                    console.log('[RangeTracker] Chart IDs:', chartIds);
+                    chartIds.forEach(function(chartId) {{
+                        try {{
+                            console.log('[RangeTracker] Processing chart:', chartId);
+                            var chartObj = eval(chartId);
+                            console.log('[RangeTracker] chartObj:', chartObj ? 'exists' : 'null');
+                            if (!chartObj || !chartObj.chart) {{
+                                console.log('[RangeTracker] Skipping - no chartObj.chart');
+                                return;
+                            }}
+                            var timeScale = chartObj.chart.timeScale();
+                            
+                            // Hook setVisibleLogicalRange
+                            if (!timeScale._originalSetVisibleLogicalRange) {{
+                                timeScale._originalSetVisibleLogicalRange = timeScale.setVisibleLogicalRange.bind(timeScale);
+                                timeScale.setVisibleLogicalRange = function(range) {{
+                                    var stack = new Error().stack.split('\\n').slice(2, 5).join(' <- ');
+                                    console.log('[RangeTracker] setVisibleLogicalRange CALLED on ' + chartId + ': ' + JSON.stringify(range) + ' | FROM: ' + stack);
+                                    return timeScale._originalSetVisibleLogicalRange(range);
+                                }};
+                                console.log('[RangeTracker] Hooked setVisibleLogicalRange for ' + chartId);
+                            }}
+                            
+                            // Hook scrollToRealTime
+                            if (!timeScale._originalScrollToRealTime) {{
+                                timeScale._originalScrollToRealTime = timeScale.scrollToRealTime.bind(timeScale);
+                                timeScale.scrollToRealTime = function() {{
+                                    var stack = new Error().stack.split('\\n').slice(2, 5).join(' <- ');
+                                    console.log('[RangeTracker] scrollToRealTime CALLED on ' + chartId + ' | FROM: ' + stack);
+                                    return timeScale._originalScrollToRealTime();
+                                }};
+                                console.log('[RangeTracker] Hooked scrollToRealTime for ' + chartId);
+                            }}
+                            
+                            // Hook scrollToPosition
+                            if (!timeScale._originalScrollToPosition) {{
+                                timeScale._originalScrollToPosition = timeScale.scrollToPosition.bind(timeScale);
+                                timeScale.scrollToPosition = function(pos, animate) {{
+                                    var stack = new Error().stack.split('\\n').slice(2, 5).join(' <- ');
+                                    console.log('[RangeTracker] scrollToPosition CALLED on ' + chartId + ': pos=' + pos + ' | FROM: ' + stack);
+                                    return timeScale._originalScrollToPosition(pos, animate);
+                                }};
+                                console.log('[RangeTracker] Hooked scrollToPosition for ' + chartId);
+                            }}
+                        }} catch(e) {{
+                            console.error('[RangeTracker] Error hooking ' + chartId + ':', e);
+                        }}
+                    }});
+                    console.log('[RangeTracker] Global range API interceptors installed');
+                }})();
+            ''')
+        
         # [FIX] Inject Fast Restore logic (JS-side auto-restore on visibility)
         # This eliminates the "jump" when switching tabs by restoring the range instantly upon resize/visibility
         # By handling this in JS, we avoid the round-trip latency to Python
         if hasattr(self, '_charts') and len(self._charts) > 0:
             chart0 = self._charts[0]
             chart0_id = chart0.id
-            
             restore_script = f"""
             (function() {{
+                // [DEBUG] TEMPORARILY DISABLED FastRestore to isolate range drift bug
+                console.log('[FastRestore] DISABLED FOR DEBUGGING');
+                return;
+                
                 var chartObj = {chart0_id};
+                var chartId = '{chart0_id}';
                 if (!chartObj || !chartObj.chart) return;
                 
-                // 1. Subscribe to range changes to keep cache fresh
-                // This ensures window._tabVisibilityRange is always the latest user-viewed range
+                // Initialize per-chart storage if not exists
+                window._chartVisibilityRanges = window._chartVisibilityRanges || {{}};
+                
+                // Get the container element - use chartObj.wrapper if available, 
+                // otherwise try stripping 'window.' from the ID
+                var container = chartObj.wrapper || chartObj.div || 
+                                document.getElementById(chartId.replace('window.', ''));
+                
+                if (!container) {{
+                    console.warn('[FastRestore] Could not find container for ' + chartId);
+                    return;
+                }}
+                
+                // 1. Subscribe to range changes to keep cache fresh (per-chart)
                 chartObj.chart.timeScale().subscribeVisibleLogicalRangeChange(range => {{
-                    if (range) window._tabVisibilityRange = range;
+                    // [SAFEGUARD] Only update if chart is actually visible
+                    if (container && container.offsetParent !== null) {{
+                        if (range) {{
+                            window._chartVisibilityRanges[chartId] = range;
+                            // console.log('[FastRestore] Saved range for ' + chartId, range);
+                        }}
+                    }}
                 }});
                 
-                // 2. Monitor visibility/resize to restore instantly
+                // 2. Monitor visibility using IntersectionObserver (works even when Qt hides without resizing)
                 var wasHidden = false;
                 
-                // We observe the chart container div 
-                // typically chartObj.wrapper is the container, or we use the ID
-                var container = document.getElementById('{chart0_id}');
-                if (container) {{
-                    new ResizeObserver(entries => {{
-                        for (let entry of entries) {{
-                            // Check if effectively hidden (0 dimension)
-                            var isHidden = entry.contentRect.width === 0 || entry.contentRect.height === 0;
+                new IntersectionObserver((entries) => {{
+                    for (let entry of entries) {{
+                        if (!entry.isIntersecting) {{
+                            // Element is now hidden/off-screen
+                            wasHidden = true;
+                            console.log('[FastRestore] Chart hidden: ' + chartId);
+                        }} else {{
+                            // Element is now visible
+                            console.log('[FastRestore] Chart visible: ' + chartId + ', wasHidden=' + wasHidden);
                             
-                            if (isHidden) {{
-                                wasHidden = true;
-                            }} else {{
-                                // Transition from hidden -> visible
-                                if (wasHidden && window._tabVisibilityRange) {{
-                                    try {{
-                                        console.log('[FastRestore] Restoring range instantly on visible');
-                                        chartObj.chart.timeScale().setVisibleLogicalRange(window._tabVisibilityRange);
-                                    }} catch(e) {{ 
-                                        console.error('[FastRestore] Error:', e); 
-                                    }}
+                            // [FIX] Check if FastRestore is suppressed (during tab restore)
+                            // Check both per-chart flag and global flag
+                            var isSuppressed = (window._suppressFastRestore && window._suppressFastRestore[chartId]) || window._suppressFastRestoreAll;
+                            if (isSuppressed) {{
+                                console.log('[FastRestore] SUPPRESSED for ' + chartId + ' (tab restore in progress, global=' + !!window._suppressFastRestoreAll + ')');
+                                // Clear per-chart suppress flag if set
+                                if (window._suppressFastRestore && window._suppressFastRestore[chartId]) {{
+                                    delete window._suppressFastRestore[chartId];
                                 }}
                                 wasHidden = false;
+                                return;
                             }}
+                            
+                            var savedRange = window._chartVisibilityRanges[chartId];
+                            if (wasHidden && savedRange) {{
+                                try {{
+                                    console.log('[FastRestore] Restoring range for ' + chartId);
+                                    chartObj.chart.timeScale().setVisibleLogicalRange(savedRange);
+                                }} catch(e) {{ 
+                                    console.error('[FastRestore] Error:', e); 
+                                }}
+                            }}
+                            wasHidden = false;
                         }}
-                    }}).observe(container);
-                    console.log('[FastRestore] Initialized for {chart0_id}');
-                }}
+                    }}
+                }}, {{ threshold: 0.1 }}).observe(container);
+                
+                console.log('[FastRestore] Initialized per-chart storage for ' + chartId + ', container:', container);
             }})();
             """
+            logger.info(f"[QtSplitChart] FastRestore: Injecting script for chart {chart0_id}")
             self.run_script(restore_script)
+            logger.info(f"[QtSplitChart] FastRestore: Script injected successfully")
 
 
     def _on_main_chart_click(self, chart, time, price):
@@ -1178,10 +1249,9 @@ class QtSplitChart(QObject):
             if prev_index != index:
                 logger.info(f"[QtSplitChart] Switching focus from {prev_index} to {index}")
                 self._update_active_border()
+                self.active_chart_changed.emit(index)
             else:
                 logger.debug(f"[QtSplitChart] Focus re-asserted on {index}")
-                
-            self.active_chart_changed.emit(index)
         except ValueError:
             logger.error(f"[QtSplitChart] Invalid index: {index_str}")
             
@@ -1330,49 +1400,144 @@ class QtSplitChart(QObject):
             script = f"window.crosshairSyncEnabled = {'true' if enabled else 'false'};"
             self._main_chart.run_script(script)
             
-            # If enabling, re-trigger native sync between visible charts
+            # Re-trigger native sync (safe now: crosshairOnly=true skips range sync)
             if enabled:
-                self._trigger_native_sync()
+                self._sync_visible_charts()
     
-    def _trigger_native_sync(self):
-        """
-        Explicitly call Lib.Handler.syncCharts between charts 0 and 1.
-        This re-triggers the native sync mechanism after data is loaded.
+
+    
+    def _sync_visible_charts(self):
+        """Sync crosshairs between ALL currently visible charts.
+        
+        This consolidated method handles both initial sync (after split)
+        and manual re-sync (toggle). It uses ResizeObserver to ensure
+        charts are fully visible before attempting to sync.
         """
         if not self._is_loaded or not self._main_chart:
             return
         
-        # Only sync if we have at least 2 charts
-        if len(self._charts) < 2:
+        # Get IDs of visible charts (those with non-zero dimensions)
+        visible_ids = []
+        for idx in self._visible_indices:
+            if idx < len(self._charts):
+                visible_ids.append(self._charts[idx].id.replace('window.', ''))
+        
+        # We need at least 2 charts to sync
+        if len(visible_ids) < 2:
             return
         
-        logger.debug(f"[QtSplitChart] Triggering native sync for charts 0 and 1")
+        logger.debug(f"[QtSplitChart] Syncing visible charts: {visible_ids}")
         
-        # Get chart IDs for charts 0 and 1
-        chart0_id = self._charts[0].id.replace('window.', '')
-        chart1_id = self._charts[1].id.replace('window.', '')
-        
-        # The native sync is bidirectional - each chart can sync to the other
-        sync_script = f'''
-            console.log("[QtSplitChart] Re-triggering native sync...");
-            (function() {{
-                var chart1 = window["{chart0_id}"];
-                var chart2 = window["{chart1_id}"];
+        # Script to sync all unique pairs of visible charts
+        sync_script = '''
+            (function() {
+                var visibleIds = %s;
                 
-                if (!chart1 || !chart2 || !chart1.wrapper || !chart2.wrapper) {{
-                    console.log("[QtSplitChart] Charts not ready for sync re-trigger");
+                // Get chart objects
+                var charts = visibleIds.map(function(id) {
+                    return window[id];
+                }).filter(function(c) {
+                    return c && c.chart && c.wrapper;
+                });
+                
+                if (charts.length < 2) {
+                    console.log("[QtSplitChart] Not enough visible charts for sync");
                     return;
-                }}
+                }
                 
-                console.log("[QtSplitChart] Calling Lib.Handler.syncCharts between", "{chart0_id}", "and", "{chart1_id}");
-                try {{
-                    Lib.Handler.syncCharts(chart1, chart2, true);  // crosshairOnly=true
-                    console.log("[QtSplitChart] Native sync re-triggered successfully!");
-                }} catch(e) {{
-                    console.error("[QtSplitChart] Sync error:", e);
-                }}
-            }})();
-        '''
+                // Function to check if chart wrapper has non-zero dimensions
+                function hasVisibleDimensions(chart) {
+                    var rect = chart.wrapper.getBoundingClientRect();
+                    return rect.width > 0 && rect.height > 0;
+                }
+                
+                // Function to setup sync once all charts are visible
+                function setupSyncWhenReady() {
+                    var allVisible = charts.every(hasVisibleDimensions);
+                    
+                    if (!allVisible) {
+                        console.log("[QtSplitChart] Charts not yet visible, using ResizeObserver");
+                        var observer = new ResizeObserver(function(entries) {
+                            if (charts.every(hasVisibleDimensions)) {
+                                observer.disconnect();
+                                setupGlobalSync();
+                            }
+                        });
+                        charts.forEach(function(c) {
+                            if (c.wrapper) observer.observe(c.wrapper);
+                        });
+                        return;
+                    }
+                    
+                    setupGlobalSync();
+                }
+                
+                function setupGlobalSync() {
+                    console.log("[QtSplitChart] Setting up global sync for", charts.length, "charts");
+                    
+                    // Clear any existing subscriptions to prevent duplicates
+                    if (window._syncCleanups) {
+                        window._syncCleanups.forEach(function(fn) { fn(); });
+                    }
+                    window._syncCleanups = [];
+                    
+                    charts.forEach(function(sourceChart) {
+                        var handler = function(param) {
+                            // Sync check
+                            if (window.crosshairSyncEnabled === false) return;
+                            if (!param || !param.time || !param.point) {
+                                // Clear others if source is cleared
+                                charts.forEach(function(target) {
+                                    if (target === sourceChart) return;
+                                    target.chart.clearCrosshairPosition();
+                                    // Also clear legend if possible?
+                                });
+                                return;
+                            }
+                            
+                            // Get source point data
+                            var sourceSeries = sourceChart.series;
+                            var dataPoint = param.seriesData.get(sourceSeries);
+                            if (!dataPoint) return;
+                            
+                            // Broadcast to all other charts
+                            charts.forEach(function(target) {
+                                if (target === sourceChart) return;
+                                try {
+                                    // Sync Crosshair (Time & Price)
+                                    // We use source values assuming charts show same instrument (Split View)
+                                    // For price, we use dataPoint.value or close
+                                    var price = dataPoint.value || dataPoint.close;
+                                    target.chart.setCrosshairPosition(price, param.time, target.series);
+                                    
+                                    // Sync Legend (using source data point)
+                                    if (target.legend && target.legend.legendHandler) {
+                                        target.legend.legendHandler(dataPoint, true);
+                                    }
+                                } catch(e) {
+                                    // console.error(e);
+                                }
+                            });
+                        };
+                        
+                        // Subscribe
+                        sourceChart.chart.subscribeCrosshairMove(handler);
+                        
+                        // Store cleanup
+                        window._syncCleanups.push(function() {
+                            try {
+                                sourceChart.chart.unsubscribeCrosshairMove(handler);
+                            } catch(e) {}
+                        });
+                    });
+                    
+                    console.log("[QtSplitChart] Global sync setup complete");
+                }
+                
+                setupSyncWhenReady();
+            })();
+        ''' % str(visible_ids)
+        
         self._main_chart.run_script(sync_script)
             
     def load_data(
@@ -1515,48 +1680,65 @@ class QtSplitChart(QObject):
         """Save chart visible ranges before tab is hidden.
         
         Called by LiveTradesTabContent.hideEvent() to preserve chart positions
-        across tab switches.
+        across tab switches. Each chart saves its own range.
         """
         if not self._is_loaded:
             return
+        if not self._main_chart:
+            return
         
-        chart0_id = self._charts[0].id if len(self._charts) > 0 else None
-        if chart0_id:
-            self._main_chart.run_script(f"""
-                (function() {{
-                    var chart = {chart0_id};
-                    if (chart && chart.chart) {{
-                        window._tabVisibilityRange = chart.chart.timeScale().getVisibleLogicalRange();
-                        window._tabVisibilityTimestamp = Date.now();
-                        console.log('[QtSplitChart] save_visibility_state:', window._tabVisibilityRange);
-                    }}
-                }})();
-            """)
-            logger.debug("[QtSplitChart] save_visibility_state called")
+        # Save range for each chart individually
+        for idx, chart in enumerate(self._charts):
+            if chart:
+                chart_id = chart.id
+                self._main_chart.run_script(f"""
+                    (function() {{
+                        var chartId = '{chart_id}';
+                        var handler = {chart_id};
+                        if (handler && handler.chart) {{
+                            window._chartVisibilityRanges = window._chartVisibilityRanges || {{}};
+                            window._chartVisibilityRanges[chartId] = handler.chart.timeScale().getVisibleLogicalRange();
+                            console.log('[FastRestore] Saved range for ' + chartId + ':', JSON.stringify(window._chartVisibilityRanges[chartId]));
+                        }}
+                    }})();
+                """)
+        logger.debug("[QtSplitChart] save_visibility_state called")
     
-    def restore_visibility_state(self, delay_ms: int = 400):
+    def restore_visibility_state(self, delay_ms: int = 150):
         """Restore chart visible ranges after tab becomes visible.
         
         Called by LiveTradesTabContent.showEvent() to restore chart positions
-        across tab switches. Uses internal JS setTimeout for timing.
+        across tab switches. Each chart restores its own saved range.
         
         Args:
-            delay_ms: Delay before restoring (default 400ms to ensure sync completes)
+            delay_ms: Delay before restoring (default 150ms to run after init code)
         """
         if not self._is_loaded:
             return
         
-        # Apply saved range to ALL visible charts (prevents sync issues)
+        # Apply saved range to each chart individually (each has its own saved range)
+        # Use setTimeout to ensure this runs AFTER crosshair sync and other init code
         for idx, chart in enumerate(self._charts):
             if chart:
+                chart_id = chart.id
                 self._main_chart.run_script(f"""
                     (function() {{
                         setTimeout(function() {{
-                            var savedRange = window._tabVisibilityRange;
-                            var handler = {chart.id};
+                            var chartId = '{chart_id}';
+                            
+                            // [FIX] Check if restore is suppressed (during tab restore with fresh data load)
+                            if (window._suppressFastRestoreAll) {{
+                                console.log('[FastRestore] Restore SKIPPED for ' + chartId + ' (initial data load in progress)');
+                                return;
+                            }}
+                            
+                            var savedRange = window._chartVisibilityRanges && window._chartVisibilityRanges[chartId];
+                            var handler = {chart_id};
                             if (savedRange && handler && handler.chart) {{
-                                console.log('[QtSplitChart] restore_visibility_state for {chart.id}:', savedRange);
+                                console.log('[FastRestore] Restoring (delayed) for ' + chartId + ':', JSON.stringify(savedRange));
                                 handler.chart.timeScale().setVisibleLogicalRange(savedRange);
+                            }} else {{
+                                console.log('[FastRestore] No saved range for ' + chartId);
                             }}
                         }}, {delay_ms});
                     }})();

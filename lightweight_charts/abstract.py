@@ -717,6 +717,24 @@ class Candlestick(SeriesCommon):
             
             restore_js = f'''
                 (function() {{
+                    var chartId = '{self.id}';
+                    var dataLength = {len(df)};
+                    var hasLogicalRange = {'true' if logical_range else 'false'};
+                    var requestedRange = {json.dumps(logical_range) if logical_range else 'null'};
+                    
+                    console.log('[ChartSet] ====== STARTING ATOMIC SET ======');
+                    console.log('[ChartSet] Chart: ' + chartId + ', DataLen: ' + dataLength);
+                    console.log('[ChartSet] Requested logicalRange:', JSON.stringify(requestedRange));
+                    
+                    // Capture current range BEFORE set
+                    var beforeRange = null;
+                    try {{
+                        beforeRange = {self.id}.chart.timeScale().getVisibleLogicalRange();
+                        console.log('[ChartSet] BEFORE range:', JSON.stringify(beforeRange));
+                    }} catch(e) {{
+                        console.log('[ChartSet] BEFORE range: (error)', e);
+                    }}
+                    
                     var chartHeight = {self.id}.chart.chartElement().clientHeight;
                     function logVertical(step) {{
                         try {{
@@ -746,6 +764,9 @@ class Candlestick(SeriesCommon):
                     // 3. Set the data
                     {self.id}.series.setData({js_data(df)});
                     logVertical('3-AfterSetData');
+                    
+                    // [RESTORED] Natural behavior - let setVisibleLogicalRange handle positioning later
+                    // No forced scroll here
             '''
             
             if 'volume' in df:
@@ -754,6 +775,9 @@ class Candlestick(SeriesCommon):
                 volume.loc[df['close'] > df['open'], 'color'] = self._volume_up_color
                 restore_js += f'''
                     {self.id}.volumeSeries.setData({js_data(volume)});
+                    {self.id}._volData = {{}};
+                    {js_data(volume)}.forEach(function(d) {{ {self.id}._volData[d.time] = d.value; }});
+                    console.log('[Handler] _volData populated on handler:', Object.keys({self.id}._volData).length, 'entries');
                     logVertical('3b-AfterVolume');
                 '''
             
@@ -765,36 +789,63 @@ class Candlestick(SeriesCommon):
                 '''
             
             if logical_range:
-                # 5. Apply logical visible range (indices)
+                # [RESTORED] With handler.ts fixed, setVisibleLogicalRange should now work correctly
+                # We want to show ONLY the real data range, not the future empty space
                 restore_js += f'''
-                    try {{
-                        {self.id}.chart.timeScale().setVisibleLogicalRange({{
-                            from: {logical_range['from']},
-                            to: {logical_range['to']}
-                        }});
-                        
-                        // Force price scale to fit content based on new visible range
-                        {self.id}.chart.priceScale('right').applyOptions({{
-                            autoScale: true,
-                            scaleMargins: {{top: 0.1, bottom: 0.1}}
-                        }});
-                        
-                        console.log('[Restore] Applied logicalRange: from={logical_range['from']}, to={logical_range['to']}');
-                        logVertical('5-AfterLogicalRange');
-                    }} catch(e) {{
-                        console.error('[Restore] Failed to apply logicalRange:', e);
-                        // Using callback to bridge log to Python if possible, or just rely on console
-                        // {self._chart.id}.chart.timeScale().fitContent(); // DISABLE FITCONTENT FALLBACK TO SEE IF IT HELPS
-                    }}
+                    requestAnimationFrame(function() {{
+                        try {{
+                            var requestedRange = {json.dumps(logical_range)};
+                            if (requestedRange && requestedRange.from !== undefined && requestedRange.to !== undefined) {{
+                                console.log('[ChartSet] Applying range:', JSON.stringify(requestedRange));
+                                {self.id}.chart.timeScale().setVisibleLogicalRange(requestedRange);
+                                
+                                var appliedRange = {self.id}.chart.timeScale().getVisibleLogicalRange();
+                                console.log('[ChartSet] Range applied:', JSON.stringify(appliedRange));
+                                
+                                // Sync per-chart visibility state for tab restore
+                                window._chartVisibilityRanges = window._chartVisibilityRanges || {{}};
+                                window._chartVisibilityRanges['{self.id}'] = appliedRange;
+                            }} else {{
+                                console.log('[ChartSet] No valid requestedRange, using default positioning');
+                            }}
+                            
+                            // NOTE: Do NOT modify scaleMargins here - charts should maintain
+                            // their natural default margins set in handler.ts
+                        }} catch(e) {{
+                            console.error('[ChartSet] Error applying range:', e);
+                        }}
+                    }});
                 '''
             
             # NOTE: Vertical price range restoration is handled by mainwindow.py
             # AFTER extensions are applied, to prevent timing conflicts
             
             
-            restore_js += '''
+            restore_js += f'''
                     console.log('[Restore] Immediate restore complete');
-                })();
+                    
+                    // Immediately check range
+                    try {{
+                        var immediateRange = {self.id}.chart.timeScale().getVisibleLogicalRange();
+                        console.log('[ChartSet] IMMEDIATE range:', JSON.stringify(immediateRange));
+                    }} catch(e) {{}}
+                    
+                    // Monitor range changes at multiple intervals to catch override
+                    [10, 25, 50, 100, 200, 500].forEach(function(delay) {{
+                        setTimeout(function() {{
+                            try {{
+                                var currentRange = {self.id}.chart.timeScale().getVisibleLogicalRange();
+                                var requested = requestedRange;
+                                if (requested && currentRange) {{
+                                    var drift = Math.abs(currentRange.to - requested.to);
+                                    if (drift > 10) {{
+                                        console.log('[ChartSet] @' + delay + 'ms DRIFT=' + Math.round(drift) + ' Current.to=' + Math.round(currentRange.to) + ' Requested.to=' + requested.to);
+                                    }}
+                                }}
+                            }} catch(e) {{}}
+                        }}, delay);
+                    }});
+                }})();
             '''
             
             self.run_script(restore_js)
@@ -813,6 +864,11 @@ class Candlestick(SeriesCommon):
                 volume['color'] = self._volume_down_color
                 volume.loc[df['close'] > df['open'], 'color'] = self._volume_up_color
                 self.run_script(f'{self.id}.volumeSeries.setData({js_data(volume)})')
+                self.run_script(f"""
+                    {self.id}._volData = {{}};
+                    {js_data(volume)}.forEach(function(d) {{ {self.id}._volData[d.time] = d.value; }});
+                    console.log('[Handler] _volData populated on handler:', Object.keys({self.id}._volData).length, 'entries');
+                """)
 
             for line in self._lines:
                 if line.name not in df.columns:
@@ -855,6 +911,7 @@ class Candlestick(SeriesCommon):
         volume = series.drop(['open', 'high', 'low', 'close']).rename({'volume': 'value'})
         volume['color'] = self._volume_up_color if series['close'] > series['open'] else self._volume_down_color
         self.run_script(f'{self.id}.volumeSeries.update({js_data(volume)})')
+        self.run_script(f"{self.id}._volData = {self.id}._volData || {{}}; {self.id}._volData[{js_data(volume)}.time] = {js_data(volume)}.value;")
 
     def update_from_tick(self, series: pd.Series, cumulative_volume: bool = False):
         """
@@ -986,7 +1043,7 @@ class AbstractChart(Candlestick, Pane):
             self, name: str = '', color: str = 'rgba(214, 237, 255, 0.6)',
             style: LINE_STYLE = 'solid', width: int = 2,
             price_line: bool = True, price_label: bool = True, price_scale_id: Optional[str] = None,
-            crosshair_marker: bool = True
+            crosshair_marker: bool = False
     ) -> Line:
         """
         Creates and returns a Line object.

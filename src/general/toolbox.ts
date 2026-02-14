@@ -9,6 +9,7 @@ import { HorizontalLine } from "../horizontal-line/horizontal-line";
 import { RayLine } from "../horizontal-line/ray-line";
 import { VerticalLine } from "../vertical-line/vertical-line";
 import { TextAnnotation } from "../text-annotation/text-annotation";
+import { VolumeProfile } from "../volume-profile/volume-profile";
 import { drawingSyncManager } from "../drawing/drawing-sync";
 
 
@@ -28,6 +29,7 @@ export class ToolBox {
     private static readonly VERT_SVG: string = ToolBox.RAY_SVG;
     // Text icon using paths instead of text element for proper fill color
     private static readonly TEXT_SVG: string = '<path d="M8 6.5c0-.28.22-.5.5-.5H14v16h-2v1h5v-1h-2V6h5.5c.28 0 .5.22.5.5V9h1V6.5c0-.83-.67-1.5-1.5-1.5h-12C7.67 5 7 5.67 7 6.5V9h1V6.5Z"/>';
+    private static readonly VOLUME_PROFILE_SVG: string = '<rect x="4" y="6" width="14" height="2"/><rect x="4" y="10" width="20" height="2"/><rect x="4" y="14" width="16" height="2"/><rect x="4" y="18" width="10" height="2"/><rect x="4" y="22" width="7" height="2"/>';
     private static readonly TRASH_SVG: string = '<path d="M18 7h5v1h-2.01l-1.33 14.64a1.5 1.5 0 0 1-1.5 1.36H9.84a1.5 1.5 0 0 1-1.49-1.36L7.01 8H5V7h5V6c0-1.1.9-2 2-2h4a2 2 0 0 1 2 2v1Zm-6-2a1 1 0 0 0-1 1v1h6V6a1 1 0 0 0-1-1h-4ZM8.02 8l1.32 14.54a.5.5 0 0 0 .5.46h8.33a.5.5 0 0 0 .5-.46L19.99 8H8.02Z"/>';
 
     div: HTMLDivElement;
@@ -167,6 +169,7 @@ export class ToolBox {
             { id: 'box', factory: () => this._makeToolBoxElement(Box, 'KeyB', ToolBox.BOX_SVG) },
             { id: 'vert', factory: () => this._makeToolBoxElement(VerticalLine, 'KeyV', ToolBox.VERT_SVG, true) },
             { id: 'text', factory: () => this._makeToolBoxElement(TextAnnotation, 'KeyA', ToolBox.TEXT_SVG) },
+            { id: 'volProfile', factory: () => this._makeToolBoxElement(VolumeProfile, 'KeyP', ToolBox.VOLUME_PROFILE_SVG) },
             {
                 id: 'trash', factory: () => this._makeActionButton(ToolBox.TRASH_SVG, () => {
                     this._showConfirmationModal('Delete all drawings?', () => {
@@ -501,10 +504,9 @@ export class ToolBox {
         // Append drawingType to the message to allow filtering on Python side
         window.callbackFunction(`save_drawings${this._handlerID}_~_${string}_~_${type || ''}`)
 
-        // [NEW] Trigger cross-chart sync for split view support
-        if (this._currentSymbol) {
-            drawingSyncManager.syncFromChart(this._handlerID);
-        }
+        // [DISABLED] JS sync disabled - Python handles all cross-chart sync
+        // to avoid dual-sync conflicts that cause drawings to appear/disappear
+        // drawingSyncManager.syncFromChart(this._handlerID);
     }
 
     loadDrawings(drawings: any[]) { // TODO any
@@ -529,6 +531,9 @@ export class ToolBox {
                     // Extract text from options, default to "Text" if not found
                     const text = (d.options && typeof d.options.text === 'string') ? d.options.text : "Text";
                     this._drawingTool.addNewDrawing(new TextAnnotation(d.points[0], text, d.options));
+                    break;
+                case "VolumeProfile":
+                    this._drawingTool.addNewDrawing(new VolumeProfile(d.points[0], d.points[1], d.options));
                     break;
             }
         })
